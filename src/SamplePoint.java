@@ -26,4 +26,7 @@ public class SamplePoint {
         this.coveringPairs = new ArrayList<>();
     }
 
+    public void addCoveringPair(String vpId, String angleId) {
+        this.coveringPairs.add(new CoveringPair(vpId, angleId));
+    }
 }
