@@ -16,4 +16,10 @@ class Direction {
     double[] getDirection() {
         return new double[]{x, y, z};
     }
+
+    // toString
+    @Override
+    public String toString() {
+        return "id: " + Id + ", x: " + x + ", y: " + y + ", z: " + z;
+    }
 }

@@ -29,4 +29,10 @@ public class Viewpoint {
         this.z = z;
         this.precision = new HashMap<>();
     }
+
+    // toString
+    @Override
+    public String toString() {
+        return "id: " + id + ", isMandatory: " + isMandatory + ", x: " + x + ", y: " + y + ", z: " + z + ", precision: " + precision;
+    }
 }

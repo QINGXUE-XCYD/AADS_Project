@@ -9,4 +9,10 @@ public class CoveringPair {
         this.viewpointId = viewpointId;
         this.directionId = directionId;
     }
+
+    // toString
+    @Override
+    public String toString() {
+        return "viewpointId: " + viewpointId + ", directionId: " + directionId;
+    }
 }

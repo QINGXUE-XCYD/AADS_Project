@@ -29,4 +29,10 @@ public class SamplePoint {
     public void addCoveringPair(String vpId, String angleId) {
         this.coveringPairs.add(new CoveringPair(vpId, angleId));
     }
+
+    // toString
+    @Override
+    public String toString() {
+        return "id: " + id + ", x: " + x + ", y: " + y + ", z: " + z + ", coveringPairs: " + coveringPairs;
+    }
 }
