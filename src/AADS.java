@@ -14,7 +14,11 @@ public class AADS {
         System.out.println("Directions: " + data.directions.size());
         System.out.println(data.directions.get(0).toString());
         System.out.println("Collision matrix: " + data.collisionMatrix.length);
+        System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
+        double[][] distanceMatrix = MathUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
+        timer.printElapsed("距离矩阵计算");
         System.out.println("Collision matrix: " + data.collisionMatrix[0].length);
-        timer.printElapsed(null);
+        timer.printElapsed("数据解析");
+
     }
 }
