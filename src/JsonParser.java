@@ -1,13 +1,12 @@
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class JsonParser {
-    static InputData parseInput(InputStream in) throws Exception {
+    static InputData parseInput() throws Exception {
         // 1️⃣ 用我们自己的 JSON 解析器读入
-        Object rootObj = SimpleJsonParser.parseFromInput(in);
+        Object rootObj = SimpleJsonParser.parseFromInput(System.in);
         if (!(rootObj instanceof Map)) {
             throw new RuntimeException("Root JSON must be an object");
         }

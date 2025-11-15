@@ -1,4 +1,3 @@
-import java.io.*;
 import java.util.*;
 
 /**
@@ -8,7 +7,7 @@ public class TestAADS {
     public static void main(String[] args) {
         try {
 
-            InputData data = JsonParser.parseInput(System.in);
+            InputData data = JsonParser.parseInput();
 
             // Step 4️⃣: 打印基本信息
             System.out.printf("视点数量: %d, 样本数量: %d, 矩阵维度: %d\n",
