@@ -14,6 +14,11 @@ public class AADS {
         System.out.println("✅ Parse Success!");
         System.out.println("Viewpoints: " + data.viewpoints.size());
         System.out.println(data.viewpoints.get(0).toString());
+        for (Viewpoint vp : data.viewpoints) {
+            if (vp.isMandatory){
+                System.out.println("Mandatory viewpoint: " + vp.toString());
+            }
+        }
         System.out.println("Samples: " + data.samplePoints.size());
         System.out.println(data.samplePoints.get(0).toString());
         System.out.println("Directions: " + data.directions.size());
@@ -29,7 +34,9 @@ public class AADS {
         CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
         CoverageChecker.checkSampleCoverage(selectedViewpoints,data.samplePoints);
         timer.printElapsed("样本覆盖检查");
-
+        List<Viewpoint> tour = TourPlanner.buildTour(data.viewpoints,selectedViewpoints,distanceMatrix);
+        System.out.println(tour.size());
+        timer.printElapsed("路径规划");
 
 
     }
