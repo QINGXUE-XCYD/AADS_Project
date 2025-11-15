@@ -28,8 +28,6 @@ class GraphUtil {
         int n = vps.size();
         double[][] dist = new double[n][n];
 
-        long start = System.currentTimeMillis();
-
         for (int i = 0; i < n; i++) {
             dist[i][i] = 0.0;
             Viewpoint vi = vps.get(i);
@@ -47,9 +45,6 @@ class GraphUtil {
                 dist[i][j] = dist[j][i] = d;
             }
         }
-
-        long end = System.currentTimeMillis();
-        System.err.println("✅ 距离矩阵构建完成，用时: " + (end - start) + " ms");
         return dist;
     }
 }

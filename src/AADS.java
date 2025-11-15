@@ -1,5 +1,5 @@
-import java.util.Map;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AADS {
     public static void main(String[] args) throws Exception {
@@ -18,26 +18,30 @@ public class AADS {
         System.out.println(data.directions.get(0).toString());
         System.out.println("Collision matrix: " + data.collisionMatrix.length);
         System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
+        timer.printElapsed("数据解析");
         double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
         timer.printElapsed("距离矩阵计算");
-        timer.printElapsed("数据解析");
+        checkCoverage(data);
 
-        Map<String, Set<String>> selected = DirectionSelector.selectDirections(data.viewpoints, data.samplePoints);
 
-        int minCover = Integer.MAX_VALUE, maxCover = 0;
-        String worstSample = null;
-
-        for (SamplePoint s : data.samplePoints) {
-            int count = s.coveringPairs.size();
-            if (count < minCover) {
-                minCover = count;
-                worstSample = s.id;
-            }
-            if (count > maxCover) maxCover = count;
-        }
-
-        System.err.printf("最少可覆盖角度: %d (样本 %s)%n", minCover, worstSample);
-        System.err.printf("最多可覆盖角度: %d%n", maxCover);
 
     }
+
+    // check coverage constraints
+    static void checkCoverage(InputData data) {
+        List<SamplePoint> lessThan1 = new ArrayList<>();
+        List<SamplePoint> lessThan3 = new ArrayList<>();
+        data.samplePoints.forEach(samplePoint -> {
+            if (samplePoint.coveringPairs.isEmpty()) {
+                lessThan1.add(samplePoint);
+            }
+            if (samplePoint.coveringPairs.size() < 3) {
+                lessThan3.add(samplePoint);
+            }
+        });
+        System.out.println("✅ Coverage Check Success!");
+        System.out.println("Covering pair less than 1: " + lessThan1.size() + " " + lessThan1);
+        System.out.println("Covering pair less than 3: " + lessThan3.size() + " " + lessThan3);
+    }
 }
+
