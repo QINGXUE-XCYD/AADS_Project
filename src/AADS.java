@@ -1,5 +1,7 @@
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class AADS {
     public static void main(String[] args) throws Exception {
@@ -7,7 +9,7 @@ public class AADS {
         TimerUtil timer = new TimerUtil();
         timer.start();
 
-        InputData data = JsonParser.parseInput(System.in);
+        InputData data = JsonParser.parseInput();
 
         System.out.println("✅ Parse Success!");
         System.out.println("Viewpoints: " + data.viewpoints.size());
@@ -22,6 +24,11 @@ public class AADS {
         double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
         timer.printElapsed("距离矩阵计算");
         checkCoverage(data);
+        Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorV3.selectDirections(data.viewpoints,data.samplePoints);
+        timer.printElapsed("方向选择");
+        CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
+        CoverageChecker.checkSampleCoverage(selectedViewpoints,data.samplePoints);
+        timer.printElapsed("样本覆盖检查");
 
 
 
