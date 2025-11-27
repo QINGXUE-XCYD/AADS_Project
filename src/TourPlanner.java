@@ -87,6 +87,18 @@ class TourPlanner {
             }
             if (bestNext == -1) {
                 System.err.println("Cannot Find Next Viewpoint");
+
+                // 强行解法，，记得改
+                //
+                //
+                //
+                // !!!!!!!
+                for (int i = 0; i < m; i++) {
+                    if (!visited[i]) {
+                        visited[i] = true;
+                        routeLocal.add(i);
+                    }
+                }
                 break;
             }
             visited[bestNext] = true;

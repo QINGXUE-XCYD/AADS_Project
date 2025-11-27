@@ -12,6 +12,11 @@ public class JsonParser {
         }
         Map<String, Object> root = (Map<String, Object>) rootObj;
 
+        // 读取lambda
+        Map<String, Object> metadata = (Map<String, Object>) root.get("metadata");
+        double lambda = ((Number) metadata.get("lambda")).doubleValue();
+
+
         // 2️⃣ 解析 directions
         List<Object> dirArray = (List<Object>) root.get("directions");
         List<Direction> directions = new ArrayList<>();
@@ -82,6 +87,6 @@ public class JsonParser {
         }
 
         // ✅ 返回封装好的 InputData
-        return new InputData(viewpoints, samples, directions, matrix);
+        return new InputData(viewpoints, samples, directions, matrix, lambda);
     }
 }

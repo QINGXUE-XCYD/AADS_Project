@@ -35,8 +35,9 @@ public class AADS {
         CoverageChecker.checkSampleCoverage(selectedViewpoints,data.samplePoints);
         timer.printElapsed("样本覆盖检查");
         List<Viewpoint> tour = TourPlanner.buildTour(data.viewpoints,selectedViewpoints,distanceMatrix);
-        System.out.println(tour.size());
+        System.out.println(tour);
         timer.printElapsed("路径规划");
+        System.out.println(SolutionBuilder.buildSolution(tour,data.viewpoints,selectedViewpoints,distanceMatrix, data.lambda));
 
 
     }
