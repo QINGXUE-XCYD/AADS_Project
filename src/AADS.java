@@ -29,13 +29,18 @@ public class AADS {
         double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
         timer.printElapsed("距离矩阵计算");
         checkCoverage(data);
+        if (!GraphUtil.isFullyReachable(data.viewpoints, data.viewpoints, data.collisionMatrix)) {
+            System.err.println("⚠️ 整个图不是连通图（有区域永远到不了）。");
+            List<Viewpoint> unreachable = GraphUtil.getUnreachable(data.viewpoints, data.viewpoints, data.collisionMatrix);
+            unreachable.forEach(vp -> System.err.println("  不可达: " + vp.id));
+        }
         Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorV3.selectDirections(data.viewpoints,data.samplePoints);
         timer.printElapsed("方向选择");
         CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
         CoverageChecker.checkSampleCoverage(selectedViewpoints,data.samplePoints);
         timer.printElapsed("样本覆盖检查");
-        List<Viewpoint> tour = TourPlanner.buildTour(data.viewpoints,selectedViewpoints,distanceMatrix);
-        System.out.println(tour);
+        List<Viewpoint> tour = TourPlanner.buildTour(data.viewpoints,selectedViewpoints, data.collisionMatrix);
+        //System.out.println(tour);
         timer.printElapsed("路径规划");
         System.out.println(SolutionBuilder.buildSolution(tour,data.viewpoints,selectedViewpoints,distanceMatrix, data.lambda));
 

@@ -1,5 +1,4 @@
-import java.util.ArrayDeque;
-import java.util.List;
+import java.util.*;
 
 class GraphUtil {
     static boolean isSymmetric(int[][] matrix) {
@@ -47,5 +46,70 @@ class GraphUtil {
             }
         }
         return dist;
+    }
+
+    // 检查可达
+    static boolean isFullyReachable(
+            List<Viewpoint> subset,
+            List<Viewpoint> allVps,
+            int[][] collisionMatrix
+    ) {
+        return getUnreachable(subset, allVps, collisionMatrix).isEmpty();
+    }
+
+    static List<Viewpoint> getUnreachable(
+            List<Viewpoint> subset,
+            List<Viewpoint> allVps,
+            int[][] collisionMatrix
+    ) {
+        int n = allVps.size();
+        double[][] dist = GraphUtil.buildDistanceMatrix(allVps, collisionMatrix);
+
+        // ---- 找起点（mandatory）----
+        Viewpoint start = null;
+        for (Viewpoint vp : allVps) {
+            if (vp.isMandatory) {
+                start = vp;
+                break;
+            }
+        }
+        if (start == null) {
+            System.err.println("⚠️ Warning: no mandatory viewpoint found. Using allVps[0] as start.");
+            start = allVps.get(0);
+        }
+
+        // ---- 建立 Viewpoint → global index 映射 ----
+        Map<Viewpoint, Integer> idx = new HashMap<>();
+        for (int i = 0; i < n; i++) idx.put(allVps.get(i), i);
+
+        int startIdx = idx.get(start);
+
+        // ---- BFS 找 reachable 区域 ----
+        boolean[] reachable = new boolean[n];
+        ArrayDeque<Integer> q = new ArrayDeque<>();
+
+        reachable[startIdx] = true;
+        q.add(startIdx);
+
+        while (!q.isEmpty()) {
+            int u = q.poll();
+            for (int v = 0; v < n; v++) {
+                if (!reachable[v] && dist[u][v] < Double.POSITIVE_INFINITY) {
+                    reachable[v] = true;
+                    q.add(v);
+                }
+            }
+        }
+
+        // ---- 找出 subset 中的不可达点 ----
+        List<Viewpoint> unreachable = new ArrayList<>();
+        for (Viewpoint vp : subset) {
+            int gi = idx.get(vp);
+            if (!reachable[gi]) {
+                unreachable.add(vp);
+            }
+        }
+
+        return unreachable;
     }
 }

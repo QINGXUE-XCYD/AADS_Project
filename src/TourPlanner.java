@@ -1,122 +1,182 @@
 import java.util.*;
 
 class TourPlanner {
+
     static List<Viewpoint> buildTour(
-            List<Viewpoint> viewPoints,
+            List<Viewpoint> allVps,
             Map<Viewpoint, Set<String>> selected,
-            double[][] distanceMatrix
+            int[][] collisionMatrix
     ) {
-        int n = viewPoints.size();
-        Set<Viewpoint> mustVisit = new LinkedHashSet<>();
-        // find mandatory viewPoint
+
+        List<Viewpoint> selectedVps = new ArrayList<>(selected.keySet());
+        List<Viewpoint> unreachable = GraphUtil.getUnreachable(
+                selectedVps,
+                allVps,
+                collisionMatrix
+        );
+
+        if (!unreachable.isEmpty()) {
+            System.err.println("⚠️ 在 selected 中有 viewpoint 从起点不可达:");
+            unreachable.forEach(vp -> System.err.println("  " + vp.id));
+        }
+        int n = allVps.size();
+        double[][] dist = GraphUtil.buildDistanceMatrix(allVps, collisionMatrix);
+
+        // -------------------------
+        // 1) 找到 start viewpoint
+        // -------------------------
         Viewpoint startVp = null;
-        for (Viewpoint vp : viewPoints) {
+        for (Viewpoint vp : allVps) {
             if (vp.isMandatory) {
-                mustVisit.add(vp);
-                if (startVp == null) {
-                    startVp = vp;
-                }
+                startVp = vp;
+                break;
             }
         }
-        mustVisit.addAll(selected.keySet());
         if (startVp == null) {
-            if (!mustVisit.isEmpty()) {
-                startVp = viewPoints.iterator().next();
-            } else {
-                System.err.println("No Start Point");
-                return new ArrayList<>();
-            }
+            System.err.println("⚠️ TourPlanner: 没有 mandatory viewpoint，使用第一个作为起点");
+            startVp = allVps.get(0);
         }
-        // build vp -> Index map
-        Map<Viewpoint, Integer> vpIndexMap = new HashMap<>();
+
+        // -------------------------
+        // 2) 构造必须访问的点集合 needVisit
+        // -------------------------
+        Set<Viewpoint> needVisitSet = new LinkedHashSet<>();
+        needVisitSet.add(startVp);
+        needVisitSet.addAll(selected.keySet());
+
+        // -------------------------
+        // 3) 将 needVisitSet 映射成局部下标（globalIdx）
+        // -------------------------
+        Map<Viewpoint, Integer> globalIdx = new HashMap<>();
         for (int i = 0; i < n; i++) {
-            vpIndexMap.put(viewPoints.get(i), i);
+            globalIdx.put(allVps.get(i), i);
         }
 
-
-        // used Index List
-        List<Integer> usedIndex = new ArrayList<>();
-        for (Viewpoint vp : mustVisit) {
-            Integer index = vpIndexMap.get(vp);
-            if (index != null) {
-                usedIndex.add(index);
-            }
+        // 需要访问的 viewpoint 在全局矩阵中的下标
+        List<Integer> nodes = new ArrayList<>();
+        for (Viewpoint vp : needVisitSet) {
+            nodes.add(globalIdx.get(vp));
         }
 
-        int m = usedIndex.size();
+        int m = nodes.size();
         if (m == 0) {
-            System.err.println("No Used Viewpoints");
             return new ArrayList<>();
         }
-        // find startVp index
-        int startIndex = vpIndexMap.get(startVp);
-        int startLocal = -1;
+
+        // -------------------------
+        // 4) 构建子图的 dist_sub（m x m）
+        // -------------------------
+        double[][] distSub = new double[m][m];
         for (int i = 0; i < m; i++) {
-            if (usedIndex.get(i) == startIndex) {
-                startLocal = i;
-                break;
+            int gi = nodes.get(i);
+            for (int j = 0; j < m; j++) {
+                int gj = nodes.get(j);
+                distSub[i][j] = dist[gi][gj];
             }
         }
-        if (startLocal == -1) {
-            usedIndex.add(0, startIndex);
-            startLocal = 0;
-            m++;
-        }
 
-        // build tour
-        boolean[] visited = new boolean[m];
-        List<Integer> routeLocal = new ArrayList<>();
-        int current = startLocal;
-        visited[current] = true;
-        routeLocal.add(current);
-        for (int step = 0; step < m; step++) {
-            int bestNext = -1;
-            double bestDistance = Double.POSITIVE_INFINITY;
-            int currentGlobalIndex = usedIndex.get(current);
+        // -------------------------
+        // 5) 在 distSub 上构建 MST（使用 Prim）
+        // -------------------------
+        // mstEdges[i] = 这个节点的父节点
+        int[] mstParent = new int[m];
+        Arrays.fill(mstParent, -1);
+
+        double[] key = new double[m];
+        boolean[] inMST = new boolean[m];
+        Arrays.fill(key, Double.POSITIVE_INFINITY);
+
+        // start local index（局部）
+        int startLocal = nodes.indexOf(globalIdx.get(startVp));
+        if (startLocal < 0) startLocal = 0;
+
+        key[startLocal] = 0;
+
+        for (int count = 0; count < m - 1; count++) {
+            // 找未加入 MST 的最小 key
+            double minKey = Double.POSITIVE_INFINITY;
+            int u = -1;
 
             for (int i = 0; i < m; i++) {
-                if (visited[i]) {
-                    continue;
-                }
-                int nextGlobalIndex = usedIndex.get(i);
-                double distance = distanceMatrix[currentGlobalIndex][nextGlobalIndex];
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestNext = i;
+                if (!inMST[i] && key[i] < minKey) {
+                    minKey = key[i];
+                    u = i;
                 }
             }
-            if (bestNext == -1) {
-                System.err.println("Cannot Find Next Viewpoint");
+            if (u == -1) break;
 
-                // 强行解法，，记得改
-                //
-                //
-                //
-                // !!!!!!!
-                for (int i = 0; i < m; i++) {
-                    if (!visited[i]) {
-                        visited[i] = true;
-                        routeLocal.add(i);
-                    }
+            inMST[u] = true;
+
+            // 更新相邻节点 key
+            for (int v = 0; v < m; v++) {
+                if (!inMST[v] && distSub[u][v] < key[v]) {
+                    mstParent[v] = u;
+                    key[v] = distSub[u][v];
                 }
-                break;
             }
-            visited[bestNext] = true;
-            routeLocal.add(bestNext);
-            current = bestNext;
         }
-        // build tour with vps
+
+        // -------------------------
+        // 6) 把 MST 转成邻接表
+        // -------------------------
+        List<List<Integer>> mstAdj = new ArrayList<>();
+        for (int i = 0; i < m; i++) mstAdj.add(new ArrayList<>());
+
+        for (int v = 0; v < m; v++) {
+            int p = mstParent[v];
+            if (p >= 0) {
+                mstAdj.get(p).add(v);
+                mstAdj.get(v).add(p);
+            }
+        }
+
+        // -------------------------
+        // 7) DFS 遍历 MST 得到路径顺序
+        // -------------------------
+        List<Integer> tourLocal = new ArrayList<>();
+        boolean[] visited = new boolean[m];
+
+        dfsMST(startLocal, mstAdj, visited, tourLocal);
+
+        // 最后回到起点
+        tourLocal.add(startLocal);
+
+        // -------------------------
+        // 8) 映射回 viewpoint 对象
+        // -------------------------
         List<Viewpoint> tour = new ArrayList<>();
-        for (int localIndex : routeLocal) {
-            int globalIndex = usedIndex.get(localIndex);
-            tour.add(viewPoints.get(globalIndex));
+        for (int localIdx : tourLocal) {
+            int global = nodes.get(localIdx);
+            tour.add(allVps.get(global));
         }
-        double totalDistance = 0;
-        for (int i = 0; i < tour.size() - 1; i++) {
-            totalDistance += distanceMatrix[vpIndexMap.get(tour.get(i))][vpIndexMap.get(tour.get(i + 1))];
+
+        // -------------------------
+        // 9) 打印结果
+        // -------------------------
+        double totalDist = 0;
+        for (int i = 0; i + 1 < tour.size(); i++) {
+            int a = globalIdx.get(tour.get(i));
+            int b = globalIdx.get(tour.get(i + 1));
+            totalDist += dist[a][b];
         }
-        System.out.printf("TourPlanner: 路径包含 %d 个独立视点，总路程约为 %.3f%n",
-                m, totalDistance);
+        System.out.printf("TourPlanner(MST+DFS): path %d nodes, distance %.3f%n",
+                tour.size(), totalDist);
+
         return tour;
+    }
+
+    // DFS 辅助函数
+    private static void dfsMST(int u,
+                               List<List<Integer>> adj,
+                               boolean[] visited,
+                               List<Integer> route) {
+        visited[u] = true;
+        route.add(u);
+
+        for (int v : adj.get(u)) {
+            if (!visited[v]) {
+                dfsMST(v, adj, visited, route);
+            }
+        }
     }
 }
