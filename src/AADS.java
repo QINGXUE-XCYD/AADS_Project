@@ -1,3 +1,4 @@
+import java.io.FileWriter;
 import java.util.*;
 
 public class AADS {
@@ -102,40 +103,53 @@ public class AADS {
     ) {
         Map<String, Viewpoint> vpId2Vp = buildVpId2VpMap(selected);
         double totalPrecision = 0;
-        for (SamplePoint sp : samples) {
-            List<Double> usable = new ArrayList<>();
-            for (CoveringPair cp : sp.coveringPairs) {
-                Viewpoint vp = vpId2Vp.get(cp.viewpointId);
-                if (vp == null) {
-                    continue;
-                }
-                Set<String> dirs = selected.get(vp);
-                if (dirs == null || !dirs.contains(cp.directionId)) {
-                    continue;
-                }
-                Double precision = vp.precision.get(cp.directionId);
-                if (precision != null) {
-                    usable.add(precision);
-                }
-            }
-            if (usable.isEmpty()) {
-                continue;
-            }
-            usable.sort((a, b) -> Double.compare(b, a));
-            // 取前3个
-            int n = Math.min(3, usable.size());
-            for (int i = 0; i < n; i++) {
-                totalPrecision += usable.get(i);
-            }
-            // 后续还有正值
-            if (usable.size() > 3) {
-                for (int i = n; i < usable.size(); i++) {
-                    if (usable.get(i) > 0) {
-                        totalPrecision += usable.get(i);
+        try (FileWriter fw = new FileWriter("precision.csv")) {
+            fw.write("sample_point_id,precision_values\n");
+
+            for (SamplePoint sp : samples) {
+                List<Double> usable = new ArrayList<>();
+                for (CoveringPair cp : sp.coveringPairs) {
+                    Viewpoint vp = vpId2Vp.get(cp.viewpointId);
+                    if (vp == null) {
+                        continue;
+                    }
+                    Set<String> dirs = selected.get(vp);
+                    if (dirs == null || !dirs.contains(cp.directionId)) {
+                        continue;
+                    }
+                    Double precision = vp.precision.get(cp.directionId);
+                    if (precision != null) {
+                        usable.add(precision);
                     }
                 }
+                if (usable.isEmpty()) {
+                    continue;
+                }
+                usable.sort((a, b) -> Double.compare(b, a));
+                // 取前3个
+                // === 写入 CSV ===
+                StringBuilder sb = new StringBuilder();
+                sb.append(sp.id);
+                int n = Math.min(3, usable.size());
+                for (int i = 0; i < n; i++) {
+                    totalPrecision += usable.get(i);
+                    sb.append(",").append(usable.get(i));
+                }
+                // 后续还有正值
+                if (usable.size() > 3) {
+                    for (int i = n; i < usable.size(); i++) {
+                        if (usable.get(i) > 0) {
+                            totalPrecision += usable.get(i);
+                            sb.append(",").append(usable.get(i));
+                        }
+                    }
+                }
+                sb.append("\n");
+                fw.write(sb.toString());
             }
+        } catch (Exception ignored) {
         }
+
         return totalPrecision;
     }
 
