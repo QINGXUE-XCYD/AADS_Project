@@ -9,7 +9,7 @@ class TimerUtil {
 
     void printElapsed(String msg) {
         long now = System.currentTimeMillis();
-        System.err.println(msg + " 耗时: " + (now - startTime) + " ms" + "; 共: " + (now - originTime) + " ms)");
+        System.out.println(msg + " 耗时: " + (now - startTime) + " ms" + "; 共: " + (now - originTime) + " ms)");
         startTime = now;
     }
 }
