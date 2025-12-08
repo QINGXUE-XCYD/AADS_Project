@@ -46,11 +46,13 @@ public class AADS {
 
         // 初始全覆盖
         Map<Viewpoint, Set<String>> selected = selectALlDirections(data.viewpoints);
+        // 构建分配表
+        Map<String, List<AssignedDirection>> assignedDirectionMap = buildAssignedDirectionMap(data.samplePoints, selected);
         // 检查覆盖
         if (true) {
             System.out.println("初始全覆盖: " + selected.size());
             System.out.println("缺少覆盖: " + countCoverageLessThan3(data.samplePoints, selected));
-            System.out.println("总精度: " + computeTotalPrecision(data.samplePoints, selected));
+            System.out.println("总精度: " + computeTotalPrecision(assignedDirectionMap));
             timer.printElapsed("初始全覆盖");
         }
 
@@ -69,6 +71,7 @@ public class AADS {
     }
 
     // 检查单点覆盖
+
     static int countCoverageForSamplePoint(SamplePoint sp, Map<Viewpoint, Set<String>> selected) {
         Map<String, Viewpoint> vpId2Vp = buildVpId2VpMap(selected);
         int count = 0;
@@ -96,7 +99,61 @@ public class AADS {
         return count;
     }
 
+    // 构建分配表
+    static Map<String, List<AssignedDirection>> buildAssignedDirectionMap(
+            List<SamplePoint> samples,
+            Map<Viewpoint, Set<String>> selected
+    ) {
+        Map<String, Viewpoint> vpId2Vp = buildVpId2VpMap(selected);
+        Map<String, List<AssignedDirection>> assignedDirectionMap = new HashMap<>();
+        for (SamplePoint sp : samples) {
+            List<AssignedDirection> list = new ArrayList<>();
+            if (sp.coveringPairs != null) {
+                for (CoveringPair cp : sp.coveringPairs) {
+                    Viewpoint vp = vpId2Vp.get(cp.viewpointId);
+                    if (vp == null) {
+                        continue;
+                    }
+                    Set<String> dirs = selected.get(vp);
+                    if (dirs == null || !dirs.contains(cp.directionId)) {
+                        continue;
+                    }
+                    Double precision = vp.precision.get(cp.directionId);
+                    if (precision == null) {
+                        continue;
+                    }
+                    list.add(new AssignedDirection(cp.viewpointId, cp.directionId, precision));
+                }
+            }
+            if (!list.isEmpty()) {
+                list.sort((a, b) -> Double.compare(b.precision, a.precision));
+            }
+            assignedDirectionMap.put(sp.id, list);
+        }
+        return assignedDirectionMap;
+    }
+
     // 计算精度
+    static double computeTotalPrecision(Map<String, List<AssignedDirection>> assignedDirectionMap) {
+        double totalPrecision = 0;
+        for (List<AssignedDirection> list : assignedDirectionMap.values()) {
+            if (list == null || list.isEmpty()) {
+                continue;
+            }
+            // 取前3个
+            for (int i = 0; i < Math.min(3, list.size()); i++) {
+                totalPrecision += list.get(i).precision;
+            }
+            // 后续还有正值
+            for (int i = 3; i < list.size(); i++) {
+                if (list.get(i).precision > 0) {
+                    totalPrecision += list.get(i).precision;
+                }
+            }
+        }
+        return totalPrecision;
+    }
+
     static double computeTotalPrecision(
             List<SamplePoint> samples,
             Map<Viewpoint, Set<String>> selected
