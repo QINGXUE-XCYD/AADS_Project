@@ -5,7 +5,6 @@ import java.util.Set;
 
 public class AADS {
     public static void main(String[] args) throws Exception {
-
         TimerUtil timer = new TimerUtil();
         timer.start();
 
@@ -42,7 +41,7 @@ public class AADS {
         List<Viewpoint> tour = TourPlanner.buildTour(data.viewpoints,selectedViewpoints, data.collisionMatrix);
         //System.out.println(tour);
         timer.printElapsed("路径规划");
-        System.out.println(SolutionBuilder.buildSolution(tour,data.viewpoints,selectedViewpoints,distanceMatrix, data.lambda));
+        System.out.println(SolutionBuilder.buildSolution(data.samplePoints,tour,data.viewpoints,selectedViewpoints,distanceMatrix, data.lambda));
 
 
     }

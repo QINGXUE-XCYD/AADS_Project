@@ -2,6 +2,7 @@ import java.util.*;
 
 class SolutionBuilder {
     static String buildSolution(
+            List<SamplePoint> samples,
             List<Viewpoint> tour,
             List<Viewpoint> viewPoints,
             Map<Viewpoint, Set<String>> selected,
@@ -18,15 +19,41 @@ class SolutionBuilder {
         // metadata
         // get precision
         double totalPrecision = 0;
-        for (Map.Entry<Viewpoint, Set<String>> entry : selected.entrySet()) {
-            Viewpoint vp = entry.getKey();
-            for (String dir : entry.getValue()) {
-                Double precision = vp.precision.get(dir);
-                if (precision != null) {
-                    totalPrecision += precision;
+        // vpId -> vp
+        Map<String, Viewpoint> vpMap = new HashMap<>();
+        for (Viewpoint vp : selected.keySet()) vpMap.put(vp.id, vp);
+
+        for (SamplePoint sp : samples) {
+
+            List<Double> usable = new ArrayList<>();
+
+            if (sp.coveringPairs != null) {
+                for (CoveringPair cp : sp.coveringPairs) {
+                    Viewpoint vp = vpMap.get(cp.viewpointId);
+                    if (vp != null && selected.get(vp).contains(cp.directionId)) {
+                        double p = vp.precision.get(cp.directionId);
+                        usable.add(p);
+                    }
                 }
             }
+
+            if (usable.isEmpty()) continue;
+
+            usable.sort((a,b)->Double.compare(b,a)); // 降序
+
+            // 覆盖要求：前 3 个
+            for (int i=0; i<Math.min(3, usable.size()); i++) {
+                if (usable.get(i) > 0)
+                    totalPrecision += usable.get(i);
+            }
+
+            // 剩下的正精度方向=额外加分
+            for (int i=3; i<usable.size(); i++) {
+                if (usable.get(i) > 0)
+                    totalPrecision += usable.get(i);
+            }
         }
+
         // get distance
         double totalDistance = 0;
         if (tour.size() > 1) {
