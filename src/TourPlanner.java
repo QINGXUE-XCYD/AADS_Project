@@ -25,7 +25,7 @@ public class TourPlanner {
      *
      * @param allVps        全部视点（用于打印/调试，可不完全等于 allowedTransit）
      * @param mustVisit     必须访问的视点集合（比如 selected.keySet()）
-     * @param allowedTransit 可用于中转的视点（= mustVisit ∪ 额外中转点，不包含已彻底删除的点）
+     * @param allowedTransit 可用于中转的视点
      * @param dist          距离矩阵 dist[i][j]，基于 viewpoint.index
      */
     public static TourResult buildTour(

@@ -1,4 +1,3 @@
-import java.io.FileWriter;
 import java.util.*;
 
 public class AADS {
@@ -46,15 +45,21 @@ public class AADS {
         }
 
         // 初始全覆盖
+        // 1. selected 初始为全方向
         Map<Viewpoint, Set<String>> selected = selectALlDirections(data.viewpoints);
-        // 距离
-        // 初始：全部视点都必须访问
+        // 2. mustVisit = 所有方向非空的视点
         Set<Viewpoint> mustVisit = new LinkedHashSet<>(data.viewpoints);
-        // 当前允许做中转的点：一开始就先允许全部（之后删点时你可以改成 selectedVp ∪ transitVp）
-        List<Viewpoint> allowedTransit = new ArrayList<>(data.viewpoints);
-
+        // 3. allowedTransit = 所有视点（后续删点会从这里移除）
+        // 注意必须是可修改的集合，不要用 List
+        Set<Viewpoint> allowedTransit = new LinkedHashSet<>(data.viewpoints);
+        // 4. deletedVPs = 初始为空
+        Set<Viewpoint> deletedVPs = new HashSet<>();
+        // 5. blocked sets
+        Set<Viewpoint> blockedVPs = new HashSet<>();
+        Set<Pair<Viewpoint, String>> blockedDirections = new HashSet<>();
+        // 距离
         TourPlanner.TourResult tourResult =
-                TourPlanner.buildTour(data.viewpoints, mustVisit, allowedTransit, distanceMatrix);
+                TourPlanner.buildTour(data.viewpoints, mustVisit, new ArrayList<>(allowedTransit), distanceMatrix);
 
         System.out.println("初始路径长度: " + tourResult.totalDistance);
         System.out.println("路径节点数(含中转): " + tourResult.tour.size());
@@ -140,6 +145,28 @@ public class AADS {
         }
         return totalPrecision;
     }
+    // 复制工具
+    /** 深拷贝 selected: Map<Viewpoint, Set<String>> */
+    public static Map<Viewpoint, Set<String>> copySelected(Map<Viewpoint, Set<String>> src) {
+        Map<Viewpoint, Set<String>> copy = new LinkedHashMap<>();
+        for (Map.Entry<Viewpoint, Set<String>> e : src.entrySet()) {
+            Viewpoint vp = e.getKey();
+            Set<String> dirs = e.getValue();
+            copy.put(vp, new LinkedHashSet<>(dirs));  // 深拷贝方向集合
+        }
+        return copy;
+    }
+
+    /** 拷贝 Set<Viewpoint> */
+    public static Set<Viewpoint> copySet(Set<Viewpoint> src) {
+        return new LinkedHashSet<>(src);
+    }
+
+    /** 拷贝 Set<Pair<Viewpoint,String>> 或其他结构 */
+    public static <T> Set<T> copyGenericSet(Set<T> src) {
+        return new HashSet<>(src);
+    }
+
 
 }
 
