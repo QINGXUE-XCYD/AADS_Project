@@ -19,7 +19,8 @@ public class AADS {
 
         InputData data = JsonParser.parseInput();
         // 数据检查
-        if (false) {
+        double[][] distanceMatrix;
+        if (true) {
             System.out.println("✅ Parse Success!");
             System.out.println("Viewpoints: " + data.viewpoints.size());
             System.out.println(data.viewpoints.get(0).toString());
@@ -35,7 +36,7 @@ public class AADS {
             System.out.println("Collision matrix: " + data.collisionMatrix.length);
             System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
             timer.printElapsed("数据解析");
-            double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
+            distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
             timer.printElapsed("距离矩阵计算");
             if (!GraphUtil.isFullyReachable(data.viewpoints, data.viewpoints, data.collisionMatrix)) {
                 System.err.println("⚠️ 整个图不是连通图（有区域永远到不了）。");
@@ -46,6 +47,17 @@ public class AADS {
 
         // 初始全覆盖
         Map<Viewpoint, Set<String>> selected = selectALlDirections(data.viewpoints);
+        // 距离
+        // 初始：全部视点都必须访问
+        Set<Viewpoint> mustVisit = new LinkedHashSet<>(data.viewpoints);
+        // 当前允许做中转的点：一开始就先允许全部（之后删点时你可以改成 selectedVp ∪ transitVp）
+        List<Viewpoint> allowedTransit = new ArrayList<>(data.viewpoints);
+
+        TourPlanner.TourResult tourResult =
+                TourPlanner.buildTour(data.viewpoints, mustVisit, allowedTransit, distanceMatrix);
+
+        System.out.println("初始路径长度: " + tourResult.totalDistance);
+        System.out.println("路径节点数(含中转): " + tourResult.tour.size());
         // 构建分配表
         Map<String, List<AssignedDirection>> assignedDirectionMap = buildAssignedDirectionMap(data.samplePoints, selected);
         // 检查覆盖
@@ -55,6 +67,14 @@ public class AADS {
             System.out.println("总精度: " + computeTotalPrecision(assignedDirectionMap));
             timer.printElapsed("初始全覆盖");
         }
+        double prec = computeTotalPrecision(assignedDirectionMap);
+        SolutionBuilder.writeSolutionJson(
+                "solution.json",
+                tourResult,
+                selected,
+                prec,
+                data.viewpoints.size()
+        );
 
     }
 
