@@ -58,16 +58,14 @@ public class AADS {
 
         System.out.println("初始路径长度: " + tourResult.totalDistance);
         System.out.println("路径节点数(含中转): " + tourResult.tour.size());
-        // 构建分配表
-        Map<String, List<AssignedDirection>> assignedDirectionMap = buildAssignedDirectionMap(data.samplePoints, selected);
         // 检查覆盖
         if (true) {
             System.out.println("初始全覆盖: " + selected.size());
             System.out.println("缺少覆盖: " + countCoverageLessThan3(data.samplePoints, selected));
-            System.out.println("总精度: " + computeTotalPrecision(assignedDirectionMap));
+            System.out.println("总精度: " + computeTotalPrecision(data.samplePoints, selected));
             timer.printElapsed("初始全覆盖");
         }
-        double prec = computeTotalPrecision(assignedDirectionMap);
+        double prec = computeTotalPrecision(data.samplePoints, selected);
         SolutionBuilder.writeSolutionJson(
                 "solution.json",
                 tourResult,
@@ -119,60 +117,7 @@ public class AADS {
         return count;
     }
 
-    // 构建分配表
-    static Map<String, List<AssignedDirection>> buildAssignedDirectionMap(
-            List<SamplePoint> samples,
-            Map<Viewpoint, Set<String>> selected
-    ) {
-        Map<String, Viewpoint> vpId2Vp = buildVpId2VpMap(selected);
-        Map<String, List<AssignedDirection>> assignedDirectionMap = new HashMap<>();
-        for (SamplePoint sp : samples) {
-            List<AssignedDirection> list = new ArrayList<>();
-            if (sp.coveringPairs != null) {
-                for (CoveringPair cp : sp.coveringPairs) {
-                    Viewpoint vp = vpId2Vp.get(cp.viewpointId);
-                    if (vp == null) {
-                        continue;
-                    }
-                    Set<String> dirs = selected.get(vp);
-                    if (dirs == null || !dirs.contains(cp.directionId)) {
-                        continue;
-                    }
-                    Double precision = vp.precision.get(cp.directionId);
-                    if (precision == null) {
-                        continue;
-                    }
-                    list.add(new AssignedDirection(cp.viewpointId, cp.directionId, precision));
-                }
-            }
-            if (!list.isEmpty()) {
-                list.sort((a, b) -> Double.compare(b.precision, a.precision));
-            }
-            assignedDirectionMap.put(sp.id, list);
-        }
-        return assignedDirectionMap;
-    }
-
     // 计算精度
-    static double computeTotalPrecision(Map<String, List<AssignedDirection>> assignedDirectionMap) {
-        double totalPrecision = 0;
-        for (List<AssignedDirection> list : assignedDirectionMap.values()) {
-            if (list == null || list.isEmpty()) {
-                continue;
-            }
-            // 取前3个
-            for (int i = 0; i < Math.min(3, list.size()); i++) {
-                totalPrecision += list.get(i).precision;
-            }
-            // 后续还有正值
-            for (int i = 3; i < list.size(); i++) {
-                if (list.get(i).precision > 0) {
-                    totalPrecision += list.get(i).precision;
-                }
-            }
-        }
-        return totalPrecision;
-    }
 
     static double computeTotalPrecision(
             List<SamplePoint> samples,
@@ -180,53 +125,19 @@ public class AADS {
     ) {
         Map<String, Viewpoint> vpId2Vp = buildVpId2VpMap(selected);
         double totalPrecision = 0;
-        try (FileWriter fw = new FileWriter("precision.csv")) {
-            fw.write("sample_point_id,precision_values\n");
+        for (SamplePoint sp : samples) {
+            for (CoveringPair cp : sp.coveringPairs) {
 
-            for (SamplePoint sp : samples) {
-                List<Double> usable = new ArrayList<>();
-                for (CoveringPair cp : sp.coveringPairs) {
-                    Viewpoint vp = vpId2Vp.get(cp.viewpointId);
-                    if (vp == null) {
-                        continue;
-                    }
-                    Set<String> dirs = selected.get(vp);
-                    if (dirs == null || !dirs.contains(cp.directionId)) {
-                        continue;
-                    }
-                    Double precision = vp.precision.get(cp.directionId);
-                    if (precision != null) {
-                        usable.add(precision);
-                    }
+                Viewpoint vp = vpId2Vp.get(cp.viewpointId);
+                if (vp == null) continue;
+                Set<String> dirs = selected.get(vp);
+                if (dirs == null || !dirs.contains(cp.directionId)) continue;
+                Double p = vp.precision.get(cp.directionId);
+                if (p != null) {
+                    totalPrecision += p;   // ⭐ 全加
                 }
-                if (usable.isEmpty()) {
-                    continue;
-                }
-                usable.sort((a, b) -> Double.compare(b, a));
-                // 取前3个
-                // === 写入 CSV ===
-                StringBuilder sb = new StringBuilder();
-                sb.append(sp.id);
-                int n = Math.min(3, usable.size());
-                for (int i = 0; i < n; i++) {
-                    totalPrecision += usable.get(i);
-                    sb.append(",").append(usable.get(i));
-                }
-                // 后续还有正值
-                if (usable.size() > 3) {
-                    for (int i = n; i < usable.size(); i++) {
-                        if (usable.get(i) > 0) {
-                            totalPrecision += usable.get(i);
-                            sb.append(",").append(usable.get(i));
-                        }
-                    }
-                }
-                sb.append("\n");
-                fw.write(sb.toString());
             }
-        } catch (Exception ignored) {
         }
-
         return totalPrecision;
     }
 
