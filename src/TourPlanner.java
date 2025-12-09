@@ -62,8 +62,8 @@ public class TourPlanner {
         // -------- 5. 计算总路程 --------
         double totalDist = computePathLength(repaired, dist);
 
-        System.out.printf("TourPlanner(NN+Repair): %d nodes, distance %.3f%n",
-                repaired.size(), totalDist);
+        //System.out.printf("TourPlanner(NN+Repair): %d nodes, distance %.3f%n",
+        //        repaired.size(), totalDist);
 
         return new TourResult(repaired, totalDist);
     }
