@@ -44,103 +44,93 @@ public class AADS {
             }
         }
 
-        // 初始全覆盖
-        // 1. selected 初始为全方向
-        Map<Viewpoint, Set<String>> selected = selectALlDirections(data.viewpoints);
-        // 2. mustVisit = 所有方向非空的视点
-        Set<Viewpoint> mustVisit = new LinkedHashSet<>(data.viewpoints);
-        // 3. allowedTransit = 所有视点（后续删点会从这里移除）
-        // 注意必须是可修改的集合，不要用 List
-        Set<Viewpoint> allowedTransit = new LinkedHashSet<>(data.viewpoints);
-        // 4. deletedVPs = 初始为空
-        Set<Viewpoint> deletedVPs = new HashSet<>();
-        // 5. blocked sets
-        Set<Viewpoint> blockedVPs = new HashSet<>();
-        Set<Pair<Viewpoint, String>> blockedDirections = new HashSet<>();
-        // 距离
-        TourPlanner.TourResult tourResult =
-                TourPlanner.buildTour(data.viewpoints, mustVisit, new ArrayList<>(allowedTransit), distanceMatrix);
-
-        System.out.println("初始路径长度: " + tourResult.totalDistance);
-        System.out.println("路径节点数(含中转): " + tourResult.tour.size());
-        // 检查覆盖
-        if (true) {
-            System.out.println("初始全覆盖: " + selected.size());
-            System.out.println("缺少覆盖: " + countCoverageLessThan3(data.samplePoints, selected));
-            System.out.println("总精度: " + computeTotalPrecision(data.samplePoints, selected));
-            timer.printElapsed("初始全覆盖");
-        }
-        double prec = computeTotalPrecision(data.samplePoints, selected);
-        SolutionBuilder.writeSolutionJson(
-                "solution.json",
-                tourResult,
-                selected,
-                prec,
-                data.viewpoints.size()
-        );
-        // 1. 找到 mandatory 起点，加入 blockedVPs
-        Viewpoint mandatory = null;
-        for (Viewpoint vp : data.viewpoints) {
-            if (vp.isMandatory) {
-                mandatory = vp;
-                break;
-            }
-        }
-        if (mandatory != null) blockedVPs.add(mandatory);
-
-// ========================
-// 计时器，限制最多 90 秒
-// ========================
+        // --------- 初始化 ---------
+        double lambda = data.lambda;  // 例如 input 中给出的 100
         long startTime = System.currentTimeMillis();
-        long timeLimitMs = 90_000;
+        long timeLimitMs = 999_000;    // 90 秒
 
-// ========================
-// 初始精度与路径距离
-// ========================
-        double oldPrecision = computeTotalPrecision(data.samplePoints, selected);
+// mustVisit 不删点，因此它永远是全部视点
+        Set<Viewpoint> mustVisit = new LinkedHashSet<>(data.viewpoints);
 
-        TourPlanner.TourResult oldTour = TourPlanner.buildTour(
-                new ArrayList<>(allowedTransit),
+// allowedTransit 也永远是全部视点
+        Set<Viewpoint> allowedTransit = new LinkedHashSet<>(data.viewpoints);
+
+// selected 初始全方向
+        Map<Viewpoint, Set<String>> selected = selectALlDirections(data.viewpoints);
+
+// 计算初始精度和距离
+        double currentPrecision = computeTotalPrecision(data.samplePoints, selected);
+        double currentDistance  = TourPlanner.buildTour(
+                data.viewpoints,
                 mustVisit,
                 new ArrayList<>(allowedTransit),
                 distanceMatrix
-        );
-        double oldDistance = oldTour.totalDistance;
+        ).totalDistance;
 
-// ========================
-// 主循环：贪心删除
-// ========================
+// 方向不可删列表
+        Set<Pair<Viewpoint,String>> blockedDirs = new HashSet<>();
+
+        System.out.println("Start delete-direction optimization...");
+
+
+// ------------ 主循环开始 --------------
         while (true) {
 
-            // 时间检查
-            long now = System.currentTimeMillis();
-            if (now - startTime > timeLimitMs) {
-                System.out.println("时间到，停止删除优化");
+            // 时间限制
+            if (System.currentTimeMillis() - startTime > timeLimitMs) {
+                System.out.println("Time exceeded, stop optimization.");
                 break;
             }
 
+            // -------- Step 1：收集所有方向并计算 DirScore --------
+            List<Triple<Viewpoint,String,Double>> dirList = new ArrayList<>();
+
+            for (var e : selected.entrySet()) {
+                Viewpoint vp = e.getKey();
+                for (String dir : e.getValue()) {
+                    double score = computeDirScore(vp, dir, data.samplePoints);
+                    dirList.add(new Triple<>(vp, dir, score));
+                }
+            }
+
+            // 若没有方向可删则结束
+            if (dirList.isEmpty()) break;
+
+            // -------- Step 2：按 DirScore 从小到大排序（越小越可删） --------
+            dirList.sort(Comparator.comparingDouble(t -> t.c()));
+
+            // 只尝试前 30% 的方向
+            int K = (int)(dirList.size() * 0.3);
+            if (K < 1) K = 1;
+            dirList = dirList.subList(0, K);
+
+            // 打乱顺序避免某个 VP 连删
+            Collections.shuffle(dirList);
+
+            // -------- Step 3：尝试删这些方向 --------
             double bestGain = -1e18;
             DeleteResult bestDelete = null;
 
+            for (Triple<Viewpoint,String,Double> t : dirList) {
 
-            // ==========================================
-            // 1) 尝试删除整个视点 vp
-            // ==========================================
+                Viewpoint vp = t.a();
+                String dir = t.b();
 
-            for (Viewpoint vp : new ArrayList<>(mustVisit)) {
+                Pair<Viewpoint,String> key = new Pair<>(vp, dir);
+                if (blockedDirs.contains(key)) continue;
 
-                // mandatory 或已 block 的不删
-                if (blockedVPs.contains(vp)) continue;
-
-                DeleteResult res = tryDeleteViewpoint(
-                        vp,
+                DeleteResult res = tryDeleteDirection(
+                        vp, dir,
                         selected, mustVisit, allowedTransit,
                         data.samplePoints,
-                        distanceMatrix
+                        distanceMatrix,
+                        currentPrecision,
+                        currentDistance,
+                        lambda
                 );
 
                 if (!res.feasible) {
-                    blockedVPs.add(vp);
+                    blockedDirs.add(key);
                     continue;
                 }
 
@@ -149,78 +139,40 @@ public class AADS {
                     bestDelete = res;
                 }
             }
-// ==========================================
-            // 2) 尝试删除所有方向 (vp,dir)
-            // ==========================================
-            for (Map.Entry<Viewpoint, Set<String>> entry : selected.entrySet()) {
-                Viewpoint vp = entry.getKey();
 
-                // 忽略 block 的点
-                if (blockedVPs.contains(vp)) continue;
-
-                for (String dir : entry.getValue()) {
-                    Pair<Viewpoint,String> key = new Pair<>(vp, dir);
-                    if (blockedDirections.contains(key)) continue;
-
-                    DeleteResult res = tryDeleteDirection(
-                            vp, dir,
-                            selected, mustVisit, allowedTransit,
-                            data.samplePoints, distanceMatrix
-                    );
-
-                    if (!res.feasible) {
-                        // 不可删 → 永久 block
-                        blockedDirections.add(key);
-                        continue;
-                    }
-
-                    if (res.gain > bestGain) {
-                        bestGain = res.gain;
-                        bestDelete = res;
-                    }
-                }
-            }
-
-            // ==========================================
-            // 没有找到可收益的删除动作，退出
-            // ==========================================
+            // -------- Step 4：判断是否有可行且有收益的删除动作 --------
             if (bestDelete == null || bestGain <= 0) {
-                System.out.println("无正收益删除，退出优化循环");
+                System.out.println("No more positive-gain deletions, stop.");
                 break;
             }
 
-            // ==========================================
-            // 应用最佳删除动作
-            // ==========================================
+            // -------- Step 5：应用删除动作 --------
             selected = bestDelete.newSelected;
             mustVisit = bestDelete.newMustVisit;
             allowedTransit = bestDelete.newAllowedTransit;
 
-            // 更新当前精度与距离
-            oldPrecision = computeTotalPrecision(data.samplePoints, selected);
-            oldTour = TourPlanner.buildTour(
-                    new ArrayList<>(allowedTransit),
+            currentPrecision = computeTotalPrecision(data.samplePoints, selected);
+            currentDistance = TourPlanner.buildTour(
+                    data.viewpoints,
                     mustVisit,
                     new ArrayList<>(allowedTransit),
                     distanceMatrix
-            );
-            oldDistance = oldTour.totalDistance;
+            ).totalDistance;
 
-            System.out.printf("执行删除：%s, gain=%.3f 当前距离=%.3f 当前精度=%.3f%n",
-                    bestDelete.actionInfo, bestGain, oldDistance, oldPrecision);
+            System.out.printf("Delete: %s (gain=%.3f), distance=%.3f, precision=%.3f%n",
+                    bestDelete.actionInfo, bestGain, currentDistance, currentPrecision);
         }
-        // ============= 删除完毕，构建最终路径 =============
+
+        System.out.println("Optimization finished.");
         TourPlanner.TourResult finalTour = TourPlanner.buildTour(
-                new ArrayList<>(allowedTransit),
+                data.viewpoints,
                 mustVisit,
                 new ArrayList<>(allowedTransit),
                 distanceMatrix
         );
 
-// 计算最终精度
         double finalPrecision = computeTotalPrecision(data.samplePoints, selected);
 
-// 输出 JSON
         SolutionBuilder.writeSolutionJson(
                 "solution.json",
                 finalTour,
@@ -229,9 +181,8 @@ public class AADS {
                 data.viewpoints.size()
         );
 
-        System.out.println("优化完成！最终距离=" + finalTour.totalDistance +
-                " 最终精度=" + finalPrecision +
-                "  输出已写入 solution.json");
+        System.out.println("Final distance=" + finalTour.totalDistance
+                + " precision=" + finalPrecision);
 
     }
 
@@ -321,7 +272,7 @@ public class AADS {
         return new HashSet<>(src);
     }
 
-    // 删除
+    // 删除方向（启发式使用）
     static DeleteResult tryDeleteDirection(
             Viewpoint vp,
             String dir,
@@ -329,7 +280,10 @@ public class AADS {
             Set<Viewpoint> mustVisit,
             Set<Viewpoint> allowedTransit,
             List<SamplePoint> samples,
-            double[][] distanceMatrix
+            double[][] distanceMatrix,
+            double currentPrecision,   // 当前主循环提供
+            double currentDistance,    // 当前主循环提供
+            double lambda
     ) {
         // 1. deep copy current state
         Map<Viewpoint, Set<String>> selCopy = copySelected(selected);
@@ -339,58 +293,47 @@ public class AADS {
         // ---------- 2. 删除该方向 ----------
         Set<String> dirs = selCopy.get(vp);
         if (dirs == null || !dirs.contains(dir)) {
-            // direction not present → treat as infeasible
             return DeleteResult.infeasible();
         }
         dirs.remove(dir);
 
         // ---------- 3. 若该 vp 方向删空 → 它变 transit-only ----------
         if (dirs.isEmpty()) {
-            // 移出 mustVisit
-            mvCopy.remove(vp);
-            // 但仍然允许作为 transit 点
-            atCopy.add(vp);
+            mvCopy.remove(vp);   // 不再强制访问
+            atCopy.add(vp);      // 允许中转（如果你不想中转，也可以不加）
         }
 
         // ---------- 4. 检查 coverage ----------
-        int missing = countCoverageLessThan3(samples, selCopy);
-        if (missing > 0) {
-            return DeleteResult.infeasible(); // 不能删
+        if (countCoverageLessThan3(samples, selCopy) > 0) {
+            return DeleteResult.infeasible();
         }
 
-        // ---------- 5. 跑 TourPlanner，看路径是否可行 ----------
+        // ---------- 5. 构建新的 Tour ----------
         TourPlanner.TourResult newTour;
         try {
             newTour = TourPlanner.buildTour(
-                    new ArrayList<>(atCopy), // 传入 allowedTransit 的 list
+                    new ArrayList<>(atCopy),     // allowedTransit = 所有点
                     mvCopy,
                     new ArrayList<>(atCopy),
                     distanceMatrix
             );
         } catch (Exception e) {
-            // repair 失败等情况
             return DeleteResult.infeasible();
         }
 
         double newDistance = newTour.totalDistance;
+
+        // ---------- 6. 新 precision ----------
         double newPrecision = computeTotalPrecision(samples, selCopy);
 
-        // ---------- 6. 计算 gain ----------
-        double oldDistance = TourPlanner.buildTour(
-                new ArrayList<>(allowedTransit),
-                mustVisit,
-                new ArrayList<>(allowedTransit),
-                distanceMatrix
-        ).totalDistance;
+        // ---------- 7. Δ值 ----------
+        double deltaPrecision = newPrecision - currentPrecision;
+        double deltaDistance  = newDistance  - currentDistance;
 
-        double oldPrecision = computeTotalPrecision(samples, selected);
+        // ---------- 8. 主目标函数增益 ----------
+        double gain = lambda * deltaPrecision - deltaDistance;
 
-        double deltaPrecision = newPrecision - oldPrecision;
-        double deltaDistance = newDistance - oldDistance;
-
-        double gain = deltaPrecision - deltaDistance;
-
-        // ---------- 7. 成功删除，返回结果 ----------
+        // ---------- 9. 返回成功删除 ----------
         return DeleteResult.feasible(
                 gain,
                 selCopy,
@@ -399,90 +342,30 @@ public class AADS {
                 "Delete direction: " + vp.id + "-" + dir
         );
     }
-
-    static DeleteResult tryDeleteViewpoint(
+    // 启发
+    static double computeDirScore(
             Viewpoint vp,
-            Map<Viewpoint, Set<String>> selected,
-            Set<Viewpoint> mustVisit,
-            Set<Viewpoint> allowedTransit,
-            List<SamplePoint> samples,
-            double[][] distanceMatrix
+            String dir,
+            List<SamplePoint> samples
     ) {
-        // 如果是强制点，直接判定不可删（保险一点）
-        if (vp.isMandatory) {
-            return DeleteResult.infeasible();
+        int count = 0;
+
+        // 统计覆盖次数
+        for (SamplePoint sp : samples) {
+            for (CoveringPair cp : sp.coveringPairs) {
+                if (cp.viewpointId.equals(vp.id) && cp.directionId.equals(dir)) {
+                    count++;
+                }
+            }
         }
 
-        // 1. 深拷贝当前状态
-        Map<Viewpoint, Set<String>> selCopy = copySelected(selected);
-        Set<Viewpoint> mvCopy = copySet(mustVisit);
-        Set<Viewpoint> atCopy = copySet(allowedTransit);
+        // 自身精度
+        double prec = vp.precision.get(dir);
 
-        // 2. 从拷贝中移除这个视点
-        // 2.1 删除该视点的所有方向
-        selCopy.remove(vp);
-
-        // 2.2 从 mustVisit 中删除
-        mvCopy.remove(vp);
-
-        // 2.3 从 allowedTransit 中删除（彻底不能作为中转）
-        atCopy.remove(vp);
-
-        // 3. 检查 coverage 是否仍然满足 >= 3
-        int missing = countCoverageLessThan3(samples, selCopy);
-        if (missing > 0) {
-            // 删这个点会导致覆盖不足 → 不可删
-            return DeleteResult.infeasible();
-        }
-
-        // 4. 尝试用新的 mustVisit/allowedTransit 构造路径
-        TourPlanner.TourResult newTour;
-        try {
-            newTour = TourPlanner.buildTour(
-                    new ArrayList<>(atCopy),   // allVps：这里用当前仍可用的点集合
-                    mvCopy,                    // 必须访问的点
-                    new ArrayList<>(atCopy),   // allowedTransit
-                    distanceMatrix
-            );
-        } catch (Exception e) {
-            // repair 失败或其他异常 → 当前删除方案不可行
-            return DeleteResult.infeasible();
-        }
-
-        double newDistance = newTour.totalDistance;
-        double newPrecision = computeTotalPrecision(samples, selCopy);
-
-        // 5. 计算删除前的精度和距离
-        TourPlanner.TourResult oldTour;
-        try {
-            oldTour = TourPlanner.buildTour(
-                    new ArrayList<>(allowedTransit),
-                    mustVisit,
-                    new ArrayList<>(allowedTransit),
-                    distanceMatrix
-            );
-        } catch (Exception e) {
-            // 理论上不应该发生：当前解本身就不可行
-            return DeleteResult.infeasible();
-        }
-
-        double oldDistance = oldTour.totalDistance;
-        double oldPrecision = computeTotalPrecision(samples, selected);
-
-        double deltaPrecision = newPrecision - oldPrecision;
-        double deltaDistance = newDistance - oldDistance;
-
-        double gain = deltaPrecision - deltaDistance;
-
-        // 6. 返回可行删除结果
-        return DeleteResult.feasible(
-                gain,
-                selCopy,
-                mvCopy,
-                atCopy,
-                "Delete direction: " + vp.id
-        );
+        // DirScore = 覆盖次数 × 精度
+        return count * prec;
     }
+    public record Triple<A,B,C>(A a, B b, C c) {}
 
 }
 
