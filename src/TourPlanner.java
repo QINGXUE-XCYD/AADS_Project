@@ -1,182 +1,246 @@
 import java.util.*;
 
-class TourPlanner {
+/**
+ * 路径规划：
+ * 1) 最近邻构造初始路径（mustVisit 内的点）
+ * 2) 闭环回到起点
+ * 3) 用 allowedTransit 作为候选，插入单/双中转点修复 INF 边
+ * 4) 返回最终路径与总路程
+ */
+public class TourPlanner {
 
-    static List<Viewpoint> buildTour(
-            List<Viewpoint> allVps,
-            Map<Viewpoint, Set<String>> selected,
-            int[][] collisionMatrix
-    ) {
+    /** 返回值：路径 + 距离 */
+    public static class TourResult {
+        public final List<Viewpoint> tour;      // 含中转点，首尾闭环
+        public final double totalDistance;
 
-        List<Viewpoint> selectedVps = new ArrayList<>(selected.keySet());
-        List<Viewpoint> unreachable = GraphUtil.getUnreachable(
-                selectedVps,
-                allVps,
-                collisionMatrix
-        );
-
-        if (!unreachable.isEmpty()) {
-            System.err.println("⚠️ 在 selected 中有 viewpoint 从起点不可达:");
-            unreachable.forEach(vp -> System.err.println("  " + vp.id));
+        public TourResult(List<Viewpoint> tour, double totalDistance) {
+            this.tour = tour;
+            this.totalDistance = totalDistance;
         }
-        int n = allVps.size();
-        double[][] dist = GraphUtil.buildDistanceMatrix(allVps, collisionMatrix);
+    }
 
-        // -------------------------
-        // 1) 找到 start viewpoint
-        // -------------------------
-        Viewpoint startVp = null;
+    /**
+     * 构造 UAV 巡航路径（闭环）：
+     *
+     * @param allVps        全部视点（用于打印/调试，可不完全等于 allowedTransit）
+     * @param mustVisit     必须访问的视点集合（比如 selected.keySet()）
+     * @param allowedTransit 可用于中转的视点
+     * @param dist          距离矩阵 dist[i][j]，基于 viewpoint.index
+     */
+    public static TourResult buildTour(
+            List<Viewpoint> allVps,
+            Collection<Viewpoint> mustVisit,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        if (mustVisit == null || mustVisit.isEmpty()) {
+            return new TourResult(new ArrayList<>(), 0.0);
+        }
+
+        // -------- 1. 找 mandatory 作为起点（没有就用 mustVisit 第一个） --------
+        Viewpoint start = null;
         for (Viewpoint vp : allVps) {
             if (vp.isMandatory) {
-                startVp = vp;
+                start = vp;
                 break;
             }
         }
-        if (startVp == null) {
-            System.err.println("⚠️ TourPlanner: 没有 mandatory viewpoint，使用第一个作为起点");
-            startVp = allVps.get(0);
+        if (start == null) {
+            start = mustVisit.iterator().next();
         }
 
-        // -------------------------
-        // 2) 构造必须访问的点集合 needVisit
-        // -------------------------
-        Set<Viewpoint> needVisitSet = new LinkedHashSet<>();
-        needVisitSet.add(startVp);
-        needVisitSet.addAll(selected.keySet());
+        // -------- 2. 最近邻构造初始路径（不闭环） --------
+        List<Viewpoint> nnPath = buildNearestNeighborPath(mustVisit, dist, start);
 
-        // -------------------------
-        // 3) 将 needVisitSet 映射成局部下标（globalIdx）
-        // -------------------------
-        Map<Viewpoint, Integer> globalIdx = new HashMap<>();
-        for (int i = 0; i < n; i++) {
-            globalIdx.put(allVps.get(i), i);
-        }
+        // -------- 3. 闭环：回到起点 --------
+        nnPath.add(start);
 
-        // 需要访问的 viewpoint 在全局矩阵中的下标
-        List<Integer> nodes = new ArrayList<>();
-        for (Viewpoint vp : needVisitSet) {
-            nodes.add(globalIdx.get(vp));
+        // -------- 4. Repair：插入中转点，使路径无 INF 边 --------
+        List<Viewpoint> repaired = repairPath(nnPath, allowedTransit, dist);
+
+        // -------- 5. 计算总路程 --------
+        double totalDist = computePathLength(repaired, dist);
+
+        //System.out.printf("TourPlanner(NN+Repair): %d nodes, distance %.3f%n",
+        //        repaired.size(), totalDist);
+
+        return new TourResult(repaired, totalDist);
+    }
+
+    // ============================================================
+    // 最近邻路径构造（只在 mustVisit 内找下一个点）
+    // ============================================================
+    private static List<Viewpoint> buildNearestNeighborPath(
+            Collection<Viewpoint> mustVisit,
+            double[][] dist,
+            Viewpoint start
+    ) {
+        // 去重 + 保序
+        List<Viewpoint> nodes = new ArrayList<>(new LinkedHashSet<>(mustVisit));
+
+        // 确保包含起点
+        if (!nodes.contains(start)) {
+            nodes.add(0, start);
         }
 
         int m = nodes.size();
-        if (m == 0) {
-            return new ArrayList<>();
-        }
-
-        // -------------------------
-        // 4) 构建子图的 dist_sub（m x m）
-        // -------------------------
-        double[][] distSub = new double[m][m];
-        for (int i = 0; i < m; i++) {
-            int gi = nodes.get(i);
-            for (int j = 0; j < m; j++) {
-                int gj = nodes.get(j);
-                distSub[i][j] = dist[gi][gj];
-            }
-        }
-
-        // -------------------------
-        // 5) 在 distSub 上构建 MST（使用 Prim）
-        // -------------------------
-        // mstEdges[i] = 这个节点的父节点
-        int[] mstParent = new int[m];
-        Arrays.fill(mstParent, -1);
-
-        double[] key = new double[m];
-        boolean[] inMST = new boolean[m];
-        Arrays.fill(key, Double.POSITIVE_INFINITY);
-
-        // start local index（局部）
-        int startLocal = nodes.indexOf(globalIdx.get(startVp));
-        if (startLocal < 0) startLocal = 0;
-
-        key[startLocal] = 0;
-
-        for (int count = 0; count < m - 1; count++) {
-            // 找未加入 MST 的最小 key
-            double minKey = Double.POSITIVE_INFINITY;
-            int u = -1;
-
-            for (int i = 0; i < m; i++) {
-                if (!inMST[i] && key[i] < minKey) {
-                    minKey = key[i];
-                    u = i;
-                }
-            }
-            if (u == -1) break;
-
-            inMST[u] = true;
-
-            // 更新相邻节点 key
-            for (int v = 0; v < m; v++) {
-                if (!inMST[v] && distSub[u][v] < key[v]) {
-                    mstParent[v] = u;
-                    key[v] = distSub[u][v];
-                }
-            }
-        }
-
-        // -------------------------
-        // 6) 把 MST 转成邻接表
-        // -------------------------
-        List<List<Integer>> mstAdj = new ArrayList<>();
-        for (int i = 0; i < m; i++) mstAdj.add(new ArrayList<>());
-
-        for (int v = 0; v < m; v++) {
-            int p = mstParent[v];
-            if (p >= 0) {
-                mstAdj.get(p).add(v);
-                mstAdj.get(v).add(p);
-            }
-        }
-
-        // -------------------------
-        // 7) DFS 遍历 MST 得到路径顺序
-        // -------------------------
-        List<Integer> tourLocal = new ArrayList<>();
         boolean[] visited = new boolean[m];
 
-        dfsMST(startLocal, mstAdj, visited, tourLocal);
-
-        // 最后回到起点
-        tourLocal.add(startLocal);
-
-        // -------------------------
-        // 8) 映射回 viewpoint 对象
-        // -------------------------
-        List<Viewpoint> tour = new ArrayList<>();
-        for (int localIdx : tourLocal) {
-            int global = nodes.get(localIdx);
-            tour.add(allVps.get(global));
+        // 构建 local index 映射：0..m-1
+        Map<Viewpoint, Integer> vp2local = new HashMap<>();
+        for (int i = 0; i < m; i++) {
+            vp2local.put(nodes.get(i), i);
         }
 
-        // -------------------------
-        // 9) 打印结果
-        // -------------------------
-        double totalDist = 0;
-        for (int i = 0; i + 1 < tour.size(); i++) {
-            int a = globalIdx.get(tour.get(i));
-            int b = globalIdx.get(tour.get(i + 1));
-            totalDist += dist[a][b];
-        }
-        System.out.printf("TourPlanner(MST+DFS): path %d nodes, distance %.3f%n",
-                tour.size(), totalDist);
+        int currentLocal = vp2local.get(start);
+        visited[currentLocal] = true;
 
-        return tour;
+        List<Viewpoint> path = new ArrayList<>();
+        path.add(start);
+
+        while (path.size() < m) {
+            Viewpoint currentVp = path.get(path.size() - 1);
+            int gi = currentVp.index;
+
+            int bestLocal = -1;
+            double bestDist = Double.POSITIVE_INFINITY;
+
+            for (int j = 0; j < m; j++) {
+                if (visited[j]) continue;
+                Viewpoint cand = nodes.get(j);
+                double d = dist[gi][cand.index];
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestLocal = j;
+                }
+            }
+
+            if (bestLocal == -1) {
+                // 理论上在连通图中不该发生
+                System.err.println("TourPlanner: 最近邻找不到下一个节点，提前结束。");
+                break;
+            }
+
+            visited[bestLocal] = true;
+            path.add(nodes.get(bestLocal));
+        }
+
+        return path;
     }
 
-    // DFS 辅助函数
-    private static void dfsMST(int u,
-                               List<List<Integer>> adj,
-                               boolean[] visited,
-                               List<Integer> route) {
-        visited[u] = true;
-        route.add(u);
+    // ============================================================
+    // Repair：沿路径检查 INF 边，必要时插入单/双中转点
+    // allowedTransit：可用来做中转的 vp（不会包含已彻底删除的点）
+    // ============================================================
+    private static List<Viewpoint> repairPath(
+            List<Viewpoint> path,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        List<Viewpoint> res = new ArrayList<>(path);
+        boolean changed = true;
 
-        for (int v : adj.get(u)) {
-            if (!visited[v]) {
-                dfsMST(v, adj, visited, route);
+        while (changed) {
+            changed = false;
+
+            for (int i = 0; i < res.size() - 1; i++) {
+                Viewpoint A = res.get(i);
+                Viewpoint B = res.get(i + 1);
+
+                if (dist[A.index][B.index] != Double.POSITIVE_INFINITY) {
+                    continue; // 这段没问题
+                }
+
+                // ===== 尝试单中转：A -> K -> B =====
+                Viewpoint K = findSingleHop(A, B, allowedTransit, dist);
+                if (K != null) {
+                    res.add(i + 1, K);
+                    changed = true;
+                    break; // 重新从头扫描
+                }
+
+                // ===== 尝试双中转：A -> K1 -> K2 -> B =====
+                List<Viewpoint> two = findTwoHop(A, B, allowedTransit, dist);
+                if (two != null) {
+                    res.add(i + 1, two.get(0));
+                    res.add(i + 2, two.get(1));
+                    changed = true;
+                    break; // 重新从头扫描
+                }
+
+                // 如果连双中转都找不到，说明在当前 allowedTransit 集合下无法修复这条边
+                throw new RuntimeException("TourPlanner: 无法修复路径段 "
+                        + A.id + " → " + B.id + "，这次删除/选择方案不可行。");
             }
         }
+
+        return res;
+    }
+
+    // 单中转：A -> K -> B
+    private static Viewpoint findSingleHop(
+            Viewpoint A,
+            Viewpoint B,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        int Ai = A.index;
+        int Bi = B.index;
+
+        for (Viewpoint K : allowedTransit) {
+            int Ki = K.index;
+            if (dist[Ai][Ki] != Double.POSITIVE_INFINITY &&
+                    dist[Ki][Bi] != Double.POSITIVE_INFINITY) {
+                return K;
+            }
+        }
+        return null;
+    }
+
+    // 双中转：A -> K1 -> K2 -> B
+    private static List<Viewpoint> findTwoHop(
+            Viewpoint A,
+            Viewpoint B,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        int Ai = A.index;
+        int Bi = B.index;
+
+        for (Viewpoint K1 : allowedTransit) {
+            int K1i = K1.index;
+            if (dist[Ai][K1i] == Double.POSITIVE_INFINITY) continue;
+
+            for (Viewpoint K2 : allowedTransit) {
+                int K2i = K2.index;
+
+                if (dist[K1i][K2i] != Double.POSITIVE_INFINITY &&
+                        dist[K2i][Bi] != Double.POSITIVE_INFINITY) {
+                    return Arrays.asList(K1, K2);
+                }
+            }
+        }
+        return null;
+    }
+
+    // ============================================================
+    // 路径长度计算
+    // ============================================================
+    private static double computePathLength(List<Viewpoint> path, double[][] dist) {
+        double total = 0.0;
+        for (int i = 0; i < path.size() - 1; i++) {
+            Viewpoint A = path.get(i);
+            Viewpoint B = path.get(i + 1);
+            double d = dist[A.index][B.index];
+            if (Double.isInfinite(d)) {
+                // 理论上 repair 之后不应再出现
+                System.err.println("Warning: 路径中仍存在 INF 边: "
+                        + A.id + " → " + B.id);
+            } else {
+                total += d;
+            }
+        }
+        return total;
     }
 }

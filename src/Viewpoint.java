@@ -4,6 +4,8 @@ import java.util.Map;
 public class Viewpoint {
     // Just id
     String id;
+    // Index in the graph
+    int index;
     // Where the tour begins and ends
     boolean isMandatory;
     // Coordinates
@@ -14,6 +16,7 @@ public class Viewpoint {
     // Constructor
     Viewpoint(String id, boolean isMandatory, double x, double y, double z, Map<String, Double> precision) {
         this.id = id;
+        this.index = Integer.parseInt(id.substring(1)) - 1;
         this.isMandatory = isMandatory;
         this.x = x;
         this.y = y;
@@ -23,6 +26,7 @@ public class Viewpoint {
 
     Viewpoint(String id, boolean isMandatory, double x, double y, double z) {
         this.id = id;
+        this.index = Integer.parseInt(id.substring(1)) - 1;
         this.isMandatory = isMandatory;
         this.x = x;
         this.y = y;

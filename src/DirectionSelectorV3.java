@@ -129,7 +129,6 @@ class DirectionSelectorV3 {
                         "DirectionSelectorV3: 迭代 %d 次，已满足 3 次覆盖的样本数：%d / %d，当前剩余 need 总和：%d%n",
                         iteration, satisfiedCount, need.size(), totalNeed
                 );
-                // System.err.println("已选择VP: "+result.size());
             }
         }
 
