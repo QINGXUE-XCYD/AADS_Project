@@ -481,7 +481,7 @@ public class AADS {
 
         // Parse the input data
         InputData data = JsonParser.parseInput();
-        if (true) {
+        if (false) {
             System.out.println("✅ Parse Success!");
             System.out.println("Viewpoints: " + data.viewpoints.size());
             System.out.println(data.viewpoints.get(0).toString());
@@ -517,7 +517,8 @@ public class AADS {
         timer.printElapsed("距离矩阵计算");
 
         // Select directions
-        Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
+        //Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
+        Map<Viewpoint,Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
         timer.printElapsed("方向选择");
         // Check the selected directions
         CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
@@ -547,6 +548,8 @@ public class AADS {
                 data.viewpoints.size()
         );
 
+        validateTour(finalTour.tour, data.collisionMatrix);
+
 
     }
     // 计算精度
@@ -560,6 +563,37 @@ public class AADS {
             }
         });
         return totalPrecision[0];
+    }
+
+    static void validateTour(List<Viewpoint> tour, int[][] cm) {
+
+        if (tour == null || tour.isEmpty()) {
+            System.err.println("❌ Tour is empty.");
+
+        }
+
+        // 1) 检查闭环：首尾必须相同
+        if (tour != null && !tour.get(0).equals(tour.get(tour.size() - 1))) {
+            System.err.println("❌ Tour is not closed (first != last).");
+
+        }
+
+        // 2) 逐段检查可行性
+        if (tour != null) {
+            for (int i = 0; i + 1 < tour.size(); i++) {
+                int a = tour.get(i).index;
+                int b = tour.get(i + 1).index;
+
+                if (cm[a][b] != 1) {
+                    System.err.printf("❌ Illegal transition: %d → %d (cm=%d)%n", a, b, cm[a][b]);
+                }
+            }
+        }
+
+        System.out.println("✅ Tour validation passed.");
+        if (tour != null) {
+            System.out.println("   Path length = " + tour.size());
+        }
     }
 }
 
