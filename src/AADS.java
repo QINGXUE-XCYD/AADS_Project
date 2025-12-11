@@ -473,57 +473,406 @@ class SolutionBuilder {
     }
 }
 
+// TimerUtil : Count the execution time
+class TimerUtil {
+    private long startTime;
+    private long originTime;
+
+    void start() {
+        startTime = System.currentTimeMillis();
+        originTime = startTime;
+    }
+
+    void printElapsed(String msg) {
+        long now = System.currentTimeMillis();
+        System.err.println(msg + " Cost: " + (now - startTime) + " ms" + "; Total: " + (now - originTime) + " ms)");
+        startTime = now;
+    }
+}
+
+// CoverageChecker : Check the coverage of the solution
+class CoverageChecker {
+    // Check if the selected directions are valid
+    static void checkSelectedDirectionsValid(Map<Viewpoint, Set<String>> selected) {
+        int totalVp = selected.size();
+        int totalDirs = 0;
+        int invalidInPrecision = 0;
+        for (Map.Entry<Viewpoint, Set<String>> entry : selected.entrySet()) {
+            Viewpoint vp = entry.getKey();
+            Set<String> dirIds = entry.getValue();
+            if (vp == null || dirIds == null) {
+                continue;
+            }
+            totalDirs += dirIds.size();
+            Map<String, Double> precisionMap = vp.precision;
+            for (String dirId : dirIds) {
+                if (precisionMap == null || !precisionMap.containsKey(dirId)) {
+                    invalidInPrecision++;
+                    System.out.println("Invalid direction: " + "vpId=" + vp.id + ", dirId=" + dirId);
+                }
+            }
+        }
+        System.out.println("Viewpoints: " + totalVp);
+        System.out.println("Selected directions: " + totalDirs);
+        System.out.println("Invalid directions: " + invalidInPrecision);
+    }
+
+    // Check if the samples are covered at least 3 times
+    static void checkSampleCoverage(
+            Map<Viewpoint, Set<String>> selected,
+            List<SamplePoint> samplePoints
+    ) {
+        // Build vpId -> Set<dirId>
+        Map<String, Set<String>> selectedIdMap = new HashMap<>();
+        for (Map.Entry<Viewpoint, Set<String>> entry : selected.entrySet()) {
+            Viewpoint vp = entry.getKey();
+            Set<String> dirIds = entry.getValue();
+            if (dirIds == null || vp == null) {
+                continue;
+            }
+            selectedIdMap.put(vp.id, dirIds);
+        }
+        int totalSamples = samplePoints.size();
+        int coveredAtLeast3 = 0;
+        int lessThan3 = 0;
+        int zeroCovered = 0;
+        int maxCover = 0;
+        int sumCover = 0;
+
+        List<String> badSamples = new ArrayList<>();
+        for (SamplePoint sp : samplePoints) {
+            int coverCount = 0;
+            if (sp.coveringPairs != null) {
+                for (CoveringPair cp : sp.coveringPairs) {
+                    String vpId = cp.viewpointId;
+                    String dirId = cp.directionId;
+
+                    Set<String> dirIds = selectedIdMap.get(vpId);
+                    if (dirIds != null && dirIds.contains(dirId)) {
+                        coverCount++;
+                    }
+                }
+            }
+            sumCover += coverCount;
+            if (coverCount > maxCover) {
+                maxCover = coverCount;
+            }
+            if (coverCount >= 3) {
+                coveredAtLeast3++;
+            } else {
+                lessThan3++;
+                if (coverCount == 0) {
+                    zeroCovered++;
+                    if (sp.coveringPairs != null) {
+                        badSamples.add(sp.id + " (cover=" + coverCount
+                                + ", possible=" + sp.coveringPairs.size() + ")");
+                    }
+                }
+            }
+        }
+        double avgCover = totalSamples == 0 ? 0 : (double) sumCover / totalSamples;
+        System.out.println("SamplePoints: " + totalSamples);
+        System.out.println("Coverage over 3: " + coveredAtLeast3);
+        System.out.println("Coverage below 3: " + lessThan3);
+        System.out.println("Zero covered sp: " + zeroCovered);
+        System.out.println("Maximum Coverage: " + maxCover);
+        System.out.println("Average Coverage: " + String.format("%.3f", avgCover));
+        if (!badSamples.isEmpty()) {
+            System.out.println("Samples that have been covered less than 3 times(format: id(cover, possible)):");
+            for (String s : badSamples) {
+                System.out.println("  " + s);
+            }
+        }
+    }
+}
+
+// TourPlanner : Build a closed tour
+class TourPlanner {
+    // Save the tour
+    static class TourResult {
+        public final List<Viewpoint> tour;      // tour
+        public final double totalDistance;      // total travel distance
+
+        // Constructor
+        public TourResult(List<Viewpoint> tour, double totalDistance) {
+            this.tour = tour;
+            this.totalDistance = totalDistance;
+        }
+    }
+
+    // Main method to build a tour
+    static TourResult buildTour(
+            List<Viewpoint> allVps, // all viewpoints
+            Collection<Viewpoint> mustVisit,    // viewpoints that must be visited
+            List<Viewpoint> allowedTransit, // viewpoints that can be visited as transit
+            double[][] dist
+    ) {
+        // Check whether there are viewpoints to visit
+        if (mustVisit == null || mustVisit.isEmpty()) {
+            return new TourResult(new ArrayList<>(), 0.0);
+        }
+
+        // Find the start viewpoint
+        Viewpoint start = null;
+        for (Viewpoint vp : allVps) {
+            if (vp.isMandatory) {
+                start = vp;
+                break;
+            }
+        }
+        // If there is no mandatory viewpoint, start from the first viewpoint in mustVisit
+        if (start == null) {
+            start = mustVisit.iterator().next();
+        }
+
+        // Make sure allowedTransit contains mustVisit (good for backtrack)
+        LinkedHashSet<Viewpoint> transitSet = new LinkedHashSet<>(allowedTransit);
+        transitSet.addAll(mustVisit);
+        List<Viewpoint> fullTransit = new ArrayList<>(transitSet);
+
+        // Nearest Neighbor Path
+        List<Viewpoint> nnPath = buildNearestNeighborPath(mustVisit, dist, start);
+
+        // Closed loop to the Beginning
+        nnPath.add(start);
+
+        // Insert a stopover point so that the path has no INF edges
+        List<Viewpoint> repaired = repairPath(nnPath, fullTransit, dist);
+
+        // Calculate the total distance
+        double totalDist = computePathLength(repaired, dist);
+        return new TourResult(repaired, totalDist);
+    }
+
+    // Nearest Neighbor Path Construct
+    private static List<Viewpoint> buildNearestNeighborPath(
+            Collection<Viewpoint> mustVisit,
+            double[][] dist,
+            Viewpoint start
+    ) {
+        // Ensure unique viewpoint list while preserving insertion order
+        List<Viewpoint> nodes = new ArrayList<>(new LinkedHashSet<>(mustVisit));
+
+        // Ensure to include a starting point
+        if (!nodes.contains(start)) {
+            nodes.add(0, start);
+        }
+
+        int m = nodes.size();
+        boolean[] visited = new boolean[m];
+
+        // Build a local index map: vp -> local index, for marking visited
+        Map<Viewpoint, Integer> vp2local = new HashMap<>();
+        for (int i = 0; i < m; i++) {
+            vp2local.put(nodes.get(i), i);
+        }
+        int currentLocal = vp2local.get(start);
+        visited[currentLocal] = true;
+
+        List<Viewpoint> path = new ArrayList<>();
+        path.add(start);
+
+        // Main loop
+        // At each step, choose the closest unvisited viewpoint
+        // INF edges are allowed and will later be repaired via allowedTransit
+        while (path.size() < m) {
+            Viewpoint currentVp = path.get(path.size() - 1);
+            int gi = currentVp.index;
+
+            int bestLocal = -1;
+            double bestDist = Double.POSITIVE_INFINITY;
+
+            for (int j = 0; j < m; j++) {
+                if (visited[j]) {
+                    continue;
+                }
+                Viewpoint cand = nodes.get(j);
+                double d = dist[gi][cand.index];
+                if (bestLocal == -1 || d < bestDist) {
+                    bestDist = d;
+                    bestLocal = j;
+                }
+            }
+            // In theory this should never happen unless mustVisit is empty
+            if (bestLocal == -1) {
+                System.err.println("TourPlanner: The nearest neighbor cannot find the next node and end early。");
+                break;
+            }
+            // Mark the bestLocal as visited and add it to the path
+            visited[bestLocal] = true;
+            path.add(nodes.get(bestLocal));
+        }
+        return path;
+    }
+
+    // Repair a path by replacing any INF edges with feasible relay points
+    private static List<Viewpoint> repairPath(
+            List<Viewpoint> path,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        // Copy the path so original is not modified
+        List<Viewpoint> res = new ArrayList<>(path);
+        boolean changed = true;
+
+        // Continue repairing until a full pass finds no changes
+        while (changed) {
+            changed = false;
+
+            // Scan adjacent pairs
+            for (int i = 0; i < res.size() - 1; i++) {
+                Viewpoint A = res.get(i);
+                Viewpoint B = res.get(i + 1);
+
+                // If A → B is valid (not INF), nothing to repair
+                if (dist[A.index][B.index] != Double.POSITIVE_INFINITY) {
+                    continue;
+                }
+
+                // Attempt single-hop repair: A → K → B
+                Viewpoint K = findSingleHop(A, B, allowedTransit, dist);
+                if (K != null) {
+                    // System.out.printf("[REPAIR-1] %s → %s → %s\n", A.id, K.id, B.id);
+                    // Insert K between A and B
+                    res.add(i + 1, K);
+                    // Restart scanning from the beginning, because path changed
+                    changed = true;
+                    break; // 重新从头扫描
+                }
+
+                // Attempt double-hop repair: A → K1 → K2 → B
+                List<Viewpoint> two = findTwoHop(A, B, allowedTransit, dist);
+                if (two != null) {
+                    // System.out.printf("[REPAIR-2] %s → %s → %s → %s\n",A.id, two.get(0).id, two.get(1).id, B.id);
+                    // Insert K1 and K2 between A and B
+                    res.add(i + 1, two.get(0));
+                    res.add(i + 2, two.get(1));
+                    // Restart scanning from the beginning, because path changed
+                    changed = true;
+                    break; // 重新从头扫描
+                }
+
+                // No repair found: This A → B cannot be fixed with the given set
+                throw new RuntimeException("TourPlanner: Path segments cannot be repaired: "
+                        + A.id + " → " + B.id);
+            }
+        }
+        return res;
+    }
+
+    // Try single-hop repair for an INF edge A → B
+    // Look for any viewpoint K in allowedTransit such that: dist[A][K] < INF  AND  dist[K][B] < INF
+    private static Viewpoint findSingleHop(
+            Viewpoint A,
+            Viewpoint B,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        int Ai = A.index;
+        int Bi = B.index;
+
+        for (Viewpoint K : allowedTransit) {
+            int Ki = K.index;
+            // Both sides must be reachable
+            if (dist[Ai][Ki] != Double.POSITIVE_INFINITY &&
+                    dist[Ki][Bi] != Double.POSITIVE_INFINITY) {
+                return K;
+            }
+        }
+        return null;
+    }
+
+    // Try double-hop repair for an INF edge A → B
+    private static List<Viewpoint> findTwoHop(
+            Viewpoint A,
+            Viewpoint B,
+            List<Viewpoint> allowedTransit,
+            double[][] dist
+    ) {
+        int Ai = A.index;
+        int Bi = B.index;
+
+        for (Viewpoint K1 : allowedTransit) {
+            int K1i = K1.index;
+            // First hop must be reachable: A → K1
+            if (dist[Ai][K1i] == Double.POSITIVE_INFINITY) continue;
+            for (Viewpoint K2 : allowedTransit) {
+                int K2i = K2.index;
+                // Check if K1 → K2 → B is reachable
+                if (dist[K1i][K2i] != Double.POSITIVE_INFINITY &&
+                        dist[K2i][Bi] != Double.POSITIVE_INFINITY) {
+                    return Arrays.asList(K1, K2);
+                }
+            }
+        }
+        return null;
+    }
+
+    // Compute total path length
+    // For each consecutive pair A → B:
+    // If dist[A][B] is finite, add it.
+    // If it is INF, print a warning (should not happen after repair)
+    private static double computePathLength(List<Viewpoint> path, double[][] dist) {
+        double total = 0.0;
+        for (int i = 0; i < path.size() - 1; i++) {
+            Viewpoint A = path.get(i);
+            Viewpoint B = path.get(i + 1);
+            double d = dist[A.index][B.index];
+            if (Double.isInfinite(d)) {
+                System.err.println("Warning: INF edges still exist in the path: " + A.id + " → " + B.id);
+            } else {
+                total += d;
+            }
+        }
+        return total;
+    }
+}
 
 public class AADS {
     public static void main(String[] args) throws Exception {
-        TimerUtil timer = new TimerUtil();
-        timer.start();
+        // TimerUtil timer = new TimerUtil();
+        // timer.start();
 
         // Parse the input data
         InputData data = JsonParser.parseInput();
-        if (false) {
-            System.out.println("✅ Parse Success!");
-            System.out.println("Viewpoints: " + data.viewpoints.size());
-            System.out.println(data.viewpoints.get(0).toString());
-            for (Viewpoint vp : data.viewpoints) {
-                if (vp.isMandatory) {
-                    System.out.println("Mandatory viewpoint: " + vp);
-                }
-            }
-            System.out.println("Samples: " + data.samplePoints.size());
-            System.out.println(data.samplePoints.get(0).toString());
-            System.out.println("Directions: " + data.directions.size());
-            System.out.println(data.directions.get(0).toString());
-            System.out.println("Collision matrix: " + data.collisionMatrix.length);
-            System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
-            timer.printElapsed("数据解析");
-            // checkCoverage
-            List<SamplePoint> lessThan1 = new ArrayList<>();
-            List<SamplePoint> lessThan3 = new ArrayList<>();
-            data.samplePoints.forEach(samplePoint -> {
-                if (samplePoint.coveringPairs.isEmpty()) {
-                    lessThan1.add(samplePoint);
-                }
-                if (samplePoint.coveringPairs.size() < 3) {
-                    lessThan3.add(samplePoint);
-                }
-            });
-            System.out.println("✅ Coverage Check Success!");
-            System.out.println("Covering pair less than 1: " + lessThan1.size() + " " + lessThan1);
-            System.out.println("Covering pair less than 3: " + lessThan3.size() + " " + lessThan3);
-        }
+        // System.out.println("✅ Parse Success!");
+        // System.out.println("Viewpoints: " + data.viewpoints.size());
+        // System.out.println(data.viewpoints.get(0).toString());
+        // for (Viewpoint vp : data.viewpoints) {
+        //     if (vp.isMandatory) {
+        //         System.out.println("Mandatory viewpoint: " + vp);
+        //     }
+        // }
+        // System.out.println("Samples: " + data.samplePoints.size());
+        // System.out.println(data.samplePoints.get(0).toString());
+        // System.out.println("Directions: " + data.directions.size());
+        // System.out.println(data.directions.get(0).toString());
+        // System.out.println("Collision matrix: " + data.collisionMatrix.length);
+        // System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
+        // // timer.printElapsed("数据解析");
+        // // checkCoverage
+        // List<SamplePoint> lessThan1 = new ArrayList<>();
+        // List<SamplePoint> lessThan3 = new ArrayList<>();
+        // data.samplePoints.forEach(samplePoint -> {
+        //     if (samplePoint.coveringPairs.isEmpty()) {
+        //         lessThan1.add(samplePoint);
+        //     }
+        //     if (samplePoint.coveringPairs.size() < 3) {
+        //         lessThan3.add(samplePoint);
+        //     }
+        // });
+        // System.out.println("✅ Coverage Check Success!");
+        // System.out.println("Covering pair less than 1: " + lessThan1.size() + " " + lessThan1);
+        // System.out.println("Covering pair less than 3: " + lessThan3.size() + " " + lessThan3);
         // Build the distance matrix
         double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
-        timer.printElapsed("距离矩阵计算");
+        // timer.printElapsed("距离矩阵计算");
 
         // Select directions
-        //Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
-        Map<Viewpoint,Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
-        timer.printElapsed("方向选择");
-        // Check the selected directions
-        CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
-        CoverageChecker.checkSampleCoverage(selectedViewpoints, data.samplePoints);
-        timer.printElapsed("样本覆盖检查");
+        Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
+        //Map<Viewpoint,Set<String>> selectedViewpoints = DirectionSelectorV3.selectDirections(data.viewpoints, data.samplePoints);
+        // timer.printElapsed("方向选择");
+        // timer.printElapsed("样本覆盖检查");
         // Build the tour
         TourPlanner.TourResult finalTour = TourPlanner.buildTour(
                 data.viewpoints,
@@ -531,13 +880,13 @@ public class AADS {
                 new ArrayList<>(selectedViewpoints.keySet()),
                 distanceMatrix
         );
-        System.out.println("路线长度" + finalTour.totalDistance);
-        timer.printElapsed("路径规划");
+        // System.out.println("Route length: " + finalTour.totalDistance);
+        // timer.printElapsed("路径规划");
 
         // Calculate precision
         double finalPrecision = computeTotalPrecision(selectedViewpoints);
-        System.out.println("Final precision: " + finalPrecision);
-        timer.printElapsed("精度计算");
+        // System.out.println("Final precision: " + finalPrecision);
+        // timer.printElapsed("精度计算");
 
         // Write the solution to file
         SolutionBuilder.writeSolutionJson(
@@ -545,17 +894,13 @@ public class AADS {
                 finalTour,
                 selectedViewpoints,
                 finalPrecision,
-                data.viewpoints.size()
+                finalTour.tour.size()
         );
-
-        validateTour(finalTour.tour, data.collisionMatrix);
-
-
+        // validateTour(finalTour.tour, data.collisionMatrix);
     }
-    // 计算精度
-    static double computeTotalPrecision(
-            Map<Viewpoint, Set<String>> selected
-    ) {
+
+    // Calculate precision
+    static double computeTotalPrecision(Map<Viewpoint, Set<String>> selected) {
         final double[] totalPrecision = {0};
         selected.forEach((vp, dirIds) -> {
             for (String dirId : dirIds) {
@@ -565,31 +910,30 @@ public class AADS {
         return totalPrecision[0];
     }
 
+    // Check the tour is valid
     static void validateTour(List<Viewpoint> tour, int[][] cm) {
-
+        // Check if the tour exists and is not empty
         if (tour == null || tour.isEmpty()) {
             System.err.println("❌ Tour is empty.");
 
         }
 
-        // 1) 检查闭环：首尾必须相同
+        // Check if the tour is closed (first == last)
         if (tour != null && !tour.get(0).equals(tour.get(tour.size() - 1))) {
             System.err.println("❌ Tour is not closed (first != last).");
 
         }
 
-        // 2) 逐段检查可行性
+        // Check if the tour is reachable
         if (tour != null) {
             for (int i = 0; i + 1 < tour.size(); i++) {
                 int a = tour.get(i).index;
                 int b = tour.get(i + 1).index;
-
                 if (cm[a][b] != 1) {
                     System.err.printf("❌ Illegal transition: %d → %d (cm=%d)%n", a, b, cm[a][b]);
                 }
             }
         }
-
         System.out.println("✅ Tour validation passed.");
         if (tour != null) {
             System.out.println("   Path length = " + tour.size());
