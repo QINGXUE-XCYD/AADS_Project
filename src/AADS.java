@@ -139,7 +139,7 @@ class InputData {
     }
 }
 
-// =============Tool Class==============
+// =============Tool/Functional Class==============
 // SimpleJsonParser
 class SimpleJsonParser {
     private final String text;
@@ -468,7 +468,8 @@ class SolutionBuilder {
         sb.append("}\n");
         // Write to file (Only for Debugging)
         try (FileWriter fw = new FileWriter(outputPath, false)) {
-            fw.write(sb.toString());
+            //fw.write(sb.toString());
+            System.out.println(sb.toString());
         }
     }
 }
