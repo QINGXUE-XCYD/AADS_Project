@@ -1,4 +1,3 @@
-import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -428,7 +427,7 @@ class SolutionBuilder {
             Map<Viewpoint, Set<String>> selected,
             double precisionValue,
             int numViewpoints
-    ) throws IOException {
+    ) {
 
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
@@ -467,10 +466,12 @@ class SolutionBuilder {
         sb.append("  ]\n");
         sb.append("}\n");
         // Write to file (Only for Debugging)
-        try (FileWriter fw = new FileWriter(outputPath, false)) {
-            //fw.write(sb.toString());
-            System.out.println(sb.toString());
-        }
+        // try (FileWriter fw = new FileWriter(outputPath, false)) {
+        //     //fw.write(sb.toString());
+        //     System.out.println(sb.toString());
+        // }
+        // Print result to stdout
+        System.out.println(sb);
     }
 }
 
@@ -870,7 +871,7 @@ public class AADS {
         // timer.printElapsed("距离矩阵计算");
 
         // Select directions
-        Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelectorHybrid.selectDirections(data.viewpoints, data.samplePoints);
+        Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelector.selectDirections(data.viewpoints, data.samplePoints);
         //Map<Viewpoint,Set<String>> selectedViewpoints = DirectionSelectorV3.selectDirections(data.viewpoints, data.samplePoints);
         // timer.printElapsed("方向选择");
         // timer.printElapsed("样本覆盖检查");
