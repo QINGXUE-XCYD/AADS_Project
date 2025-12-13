@@ -900,7 +900,7 @@ class TourPlanner {
                 // Attempt single-hop repair: A → K → B
                 Viewpoint K = findSingleHop(A, B, allowedTransit, dist);
                 if (K != null) {
-                    // System.out.printf("[REPAIR-1] %s → %s → %s\n", A.id, K.id, B.id);
+                     System.out.printf("[REPAIR-1] %s → %s → %s\n", A.id, K.id, B.id);
                     // Insert K between A and B
                     res.add(i + 1, K);
                     // Restart scanning from the beginning, because path changed
@@ -911,7 +911,7 @@ class TourPlanner {
                 // Attempt double-hop repair: A → K1 → K2 → B
                 List<Viewpoint> two = findTwoHop(A, B, allowedTransit, dist);
                 if (two != null) {
-                    // System.out.printf("[REPAIR-2] %s → %s → %s → %s\n",A.id, two.get(0).id, two.get(1).id, B.id);
+                     System.out.printf("[REPAIR-2] %s → %s → %s → %s\n",A.id, two.get(0).id, two.get(1).id, B.id);
                     // Insert K1 and K2 between A and B
                     res.add(i + 1, two.get(0));
                     res.add(i + 2, two.get(1));
@@ -998,48 +998,50 @@ class TourPlanner {
 
 public class AADS {
     public static void main(String[] args) throws Exception {
-        // TimerUtil timer = new TimerUtil();
-        // timer.start();
+         TimerUtil timer = new TimerUtil();
+         timer.start();
 
         // Parse the input data
         InputData data = JsonParser.parseInput();
-        // System.out.println("✅ Parse Success!");
-        // System.out.println("Viewpoints: " + data.viewpoints.size());
-        // System.out.println(data.viewpoints.get(0).toString());
-        // for (Viewpoint vp : data.viewpoints) {
-        //     if (vp.isMandatory) {
-        //         System.out.println("Mandatory viewpoint: " + vp);
-        //     }
-        // }
-        // System.out.println("Samples: " + data.samplePoints.size());
-        // System.out.println(data.samplePoints.get(0).toString());
-        // System.out.println("Directions: " + data.directions.size());
-        // System.out.println(data.directions.get(0).toString());
-        // System.out.println("Collision matrix: " + data.collisionMatrix.length);
-        // System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
-        // // timer.printElapsed("数据解析");
-        // // checkCoverage
-        // List<SamplePoint> lessThan1 = new ArrayList<>();
-        // List<SamplePoint> lessThan3 = new ArrayList<>();
-        // data.samplePoints.forEach(samplePoint -> {
-        //     if (samplePoint.coveringPairs.isEmpty()) {
-        //         lessThan1.add(samplePoint);
-        //     }
-        //     if (samplePoint.coveringPairs.size() < 3) {
-        //         lessThan3.add(samplePoint);
-        //     }
-        // });
-        // System.out.println("✅ Coverage Check Success!");
-        // System.out.println("Covering pair less than 1: " + lessThan1.size() + " " + lessThan1);
-        // System.out.println("Covering pair less than 3: " + lessThan3.size() + " " + lessThan3);
+         System.out.println("✅ Parse Success!");
+         System.out.println("Viewpoints: " + data.viewpoints.size());
+         System.out.println(data.viewpoints.get(0).toString());
+         for (Viewpoint vp : data.viewpoints) {
+             if (vp.isMandatory) {
+                 System.out.println("Mandatory viewpoint: " + vp);
+             }
+         }
+         System.out.println("Samples: " + data.samplePoints.size());
+         System.out.println(data.samplePoints.get(0).toString());
+         System.out.println("Directions: " + data.directions.size());
+         System.out.println(data.directions.get(0).toString());
+         System.out.println("Collision matrix: " + data.collisionMatrix.length);
+         System.out.println("Is symmetric: " + GraphUtil.isSymmetric(data.collisionMatrix));
+          timer.printElapsed("数据解析");
+         // checkCoverage
+         List<SamplePoint> lessThan1 = new ArrayList<>();
+         List<SamplePoint> lessThan3 = new ArrayList<>();
+         data.samplePoints.forEach(samplePoint -> {
+             if (samplePoint.coveringPairs.isEmpty()) {
+                 lessThan1.add(samplePoint);
+             }
+             if (samplePoint.coveringPairs.size() < 3) {
+                 lessThan3.add(samplePoint);
+             }
+         });
+         System.out.println("✅ Coverage Check Success!");
+         System.out.println("Covering pair less than 1: " + lessThan1.size() + " " + lessThan1);
+         System.out.println("Covering pair less than 3: " + lessThan3.size() + " " + lessThan3);
         // Build the distance matrix
         double[][] distanceMatrix = GraphUtil.buildDistanceMatrix(data.viewpoints, data.collisionMatrix);
-        // timer.printElapsed("距离矩阵计算");
+         timer.printElapsed("距离矩阵计算");
 
         // Select directions
         Map<Viewpoint, Set<String>> selectedViewpoints = DirectionSelector.selectDirections(data.viewpoints, data.samplePoints);
-        // timer.printElapsed("方向选择");
-        // timer.printElapsed("样本覆盖检查");
+         timer.printElapsed("方向选择");
+         CoverageChecker.checkSelectedDirectionsValid(selectedViewpoints);
+         CoverageChecker.checkSampleCoverage(selectedViewpoints, data.samplePoints);
+         timer.printElapsed("结果检查");
         // Build the tour
         TourPlanner.TourResult finalTour = TourPlanner.buildTour(
                 data.viewpoints,
@@ -1047,13 +1049,13 @@ public class AADS {
                 new ArrayList<>(selectedViewpoints.keySet()),
                 distanceMatrix
         );
-        // System.out.println("Route length: " + finalTour.totalDistance);
-        // timer.printElapsed("路径规划");
+         System.out.println("Route length: " + finalTour.totalDistance);
+         timer.printElapsed("路径规划");
 
         // Calculate precision
         double finalPrecision = computeTotalPrecision(selectedViewpoints);
-        // System.out.println("Final precision: " + finalPrecision);
-        // timer.printElapsed("精度计算");
+         System.out.println("Final precision: " + finalPrecision);
+         timer.printElapsed("精度计算");
 
         // Write the solution to file
         SolutionBuilder.writeSolutionJson(
@@ -1063,7 +1065,9 @@ public class AADS {
                 finalPrecision,
                 finalTour.tour.size()
         );
-        // validateTour(finalTour.tour, data.collisionMatrix);
+         timer.printElapsed("结果输出");
+         validateTour(finalTour.tour, data.collisionMatrix);
+         timer.printElapsed("结果验证");
     }
 
     // Calculate precision
